@@ -501,6 +501,29 @@ public:
     bool makeDirectory(const FileRef& ref);
     /// @brief Liegt ein WEGA-Dateisystem (Verzeichnisbaum, UNIX) vor?
     bool istWega() const { return profile_ && profile_->type == FsType::Wega; }
+    /// @brief UNIX-Sicht (Modus/uid/gid, Pfade, `ls -l`): WEGA oder tar-Diskette.
+    bool istUnix() const {
+        return profile_ && (profile_->type == FsType::Wega || profile_->type == FsType::Tar);
+    }
+    /// @brief Archiv aus einem tar-Strom (nur lesbar, kein Dateisystem)?
+    bool istTar() const { return profile_ && profile_->type == FsType::Tar; }
+
+    /**
+     * @brief Mehrere Abbilder als EINEN tar-Strom oeffnen (Mehrdisketten-Satz).
+     *
+     * Die linearen Datenstroeme werden in der angegebenen Reihenfolge verkettet; so
+     * werden Dateien ueber die Diskettengrenze vollstaendig.  Das Ergebnis ist ein
+     * schreibgeschuetztes Volume (Medium und Pfad des ersten Abbilds), `list`,
+     * `extract`, `extractAll`, `check` gehen wie bei jeder anderen Diskette.
+     */
+    static std::unique_ptr<DiskVolume> openTarSatz(const std::vector<std::string>& pfade,
+                                                   const FormatCatalog& formats,
+                                                   const FsCatalog& fs_cat,
+                                                   std::string& err);
+
+    /// @brief Die ganze lineare Sektorfolge (Zylinder, Kopf, Sektor) — auch einer roh
+    ///        geoeffneten Diskette, sofern ihre Geometrie bekannt ist.
+    bool linearBytes(std::vector<uint8_t>& out) const;
 
     /// @brief Warum das letzte @ref insert / @ref insertAll abgelehnt wurde.
     ///        Nur aussagekraeftig, wenn der Aufruf `false` lieferte.
@@ -690,6 +713,8 @@ public:
     bool dirty() const;
 
     /// @brief Kopfdaten (inkl. Kommentartext) eines CopyQM-Abbilds; nullptr bei anderen Containern.
+    /// @brief Container der gebundenen Datei: "img" | "hfe" | "dmk" | "cqm".
+    std::string containerName() const;
     const CqmCodec::SourceInfo* cqmInfo() const { return disk_ ? disk_->cqmInfo() : nullptr; }
 
     /**
@@ -714,8 +739,9 @@ public:
     /// @brief Schreibgeschuetzt?  Vorgabe beim Oeffnen: **ja**.
     bool readOnly() const { return read_only_; }
 
-    /// @brief Ist der Schreibschutz UNAUFHEBBAR (nur gemessene Geometrie)?
-    bool readOnlyForced() const { return nur_lesen_erzwungen_; }
+    /// @brief Ist der Schreibschutz UNAUFHEBBAR (nur gemessene Geometrie, `.cqm`,
+    ///        tar-Diskette)?
+    bool readOnlyForced() const;
 
     /**
      * @brief Schreibschutz setzen/aufheben.
@@ -760,6 +786,10 @@ private:
     };
 
     bool fail(const std::string& why) const { last_error_ = why; return false; }
+    /// @brief Meldung fuer eine abgewiesene Schreibanforderung (tar/.cqm eigene Texte).
+    std::string schreibschutzText() const;
+    /// @brief Geometrie der Diskette, auch wenn kein Dateisystem gemountet ist; nullptr = unbekannt.
+    const DiskFormat* rohFormat() const;
     bool valid(int v) const { return v >= 0 && v < static_cast<int>(volumes_.size()); }
 
     /// @brief Erwartete Unterverzeichnisse pruefen und Dateien je Volume einsammeln.

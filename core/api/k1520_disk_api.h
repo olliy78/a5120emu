@@ -251,6 +251,16 @@ K1520_API const char* k1520d_detect(const char* path);
 
 K1520_API const char* k1520d_detected_format(K1520Disk h);
 K1520_API const char* k1520d_detected_fs(K1520Disk h);
+/**
+ * @brief Auskunft ueber den Container der Datei (additiv, ABI-stabil).
+ *
+ * @p key: "type" (img|hfe|dmk|cqm; bei tar-satz der des ersten Abbilds); nur bei
+ * `.cqm`: "description" (Bezeichnung), "label" (Etikett, leer bei "** NONE **"),
+ * "comment" (Kommentartext), "interleave", "skew", "cylinders" ("gespeichert/gesamt"),
+ * "crc" ("ok" | "falsch" | "nicht geprueft").  Unbekannter Schluessel oder nicht
+ * zutreffend: "".  Zeiger gilt bis zum naechsten Aufruf fuer diese Diskette.
+ */
+K1520_API const char* k1520d_container_info(K1520Disk h, const char* key);
 /// @brief false = mehrere gleich gute Kandidaten (Alternativen in @ref k1520d_detection_alternatives).
 K1520_API bool        k1520d_detection_unambiguous(K1520Disk h);
 K1520_API const char* k1520d_detection_alternatives(K1520Disk h);

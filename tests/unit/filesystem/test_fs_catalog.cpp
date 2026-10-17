@@ -91,6 +91,9 @@ TEST(FsCatalog, ProfilnamenSindEinStabilerVertrag) {
         // WEGA (P8000, UNIX System III): andere Familie, beschreibt sich selbst
         // (doc/design/27_wega_dateisystem.md) — ein Eintrag fuer die 720-K-Diskette.
         "wega720",
+        // tar-Disketten (P8000-Lieferungen ohne Dateisystem, nur lesbar): letzter
+        // Erkennungsversuch hinter allen echten Dateisystemen (disk_volume.cpp).
+        "tar720",
         // BCU 880: Arbeitsdiskette „ohne SYL“ (Name, `detect: false`) und die Startdiskette
         // „SYL auf Spur 1“ (erkannt am Lader; `nur_boot`).
         "bcu880", "bcu880_syl", "bcu880_kombi", "bcu880_kombi80", "bcu880_80",

@@ -24,6 +24,7 @@ const char* fsTypeName(FsType t) {
         case FsType::Udos:     return "udos";
         case FsType::Udos1715: return "udos1715";
         case FsType::Wega:     return "wega";
+        case FsType::Tar:      return "tar";
     }
     return "?";
 }
@@ -111,12 +112,13 @@ bool buildProfile(const yaml::Node& node, const FormatCatalog& formats, FsProfil
     // ── type (Pflicht) ──
     const yaml::Node* n_type = node.find("type");
     if (!n_type || !n_type->isScalar())
-        { why = "Pflichtfeld 'type' fehlt (cpm | udos | udos1715 | wega)"; return false; }
+        { why = "Pflichtfeld 'type' fehlt (cpm | udos | udos1715 | wega | tar)"; return false; }
     if      (n_type->scalar == "cpm")      out.type = FsType::Cpm;
     else if (n_type->scalar == "udos")     out.type = FsType::Udos;
     else if (n_type->scalar == "udos1715") out.type = FsType::Udos1715;
     else if (n_type->scalar == "wega")     out.type = FsType::Wega;
-    else { why = "'type': '" + n_type->scalar + "' — erlaubt sind cpm | udos | udos1715 | wega";
+    else if (n_type->scalar == "tar")      out.type = FsType::Tar;
+    else { why = "'type': '" + n_type->scalar + "' — erlaubt sind cpm | udos | udos1715 | wega | tar";
            return false; }
 
     // ── data_start ──
@@ -223,7 +225,7 @@ bool buildProfile(const yaml::Node& node, const FormatCatalog& formats, FsProfil
             if (node.has(feld))
                 issues.push_back(where + ": '" + feld + "' gilt nur fuer die UDOS-Familie"
                                                         " — ignoriert");
-    } else if (out.type == FsType::Wega) {
+    } else if (out.type == FsType::Wega || out.type == FsType::Tar) {
         // WEGA beschreibt sich selbst (Superblock): Blockgroesse 512, Inode-Liste und
         // Groesse stehen auf dem Datentraeger.  Eine Diskette = EIN Dateisystem ueber
         // beide Seiten, ab Block 0 (doc/design/27_wega_dateisystem.md §2).

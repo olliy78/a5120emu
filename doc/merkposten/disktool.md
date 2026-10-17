@@ -1017,3 +1017,20 @@ Was beim Weiterarbeiten zu wissen ist:
   schon berücksichtigt war.  Wächter:
   `UdosFileSystemWrite.VersionstextImAenderungsfeldUeberlebt` (prüft mit derselben
   Probe, dass ein LEERES Feld weiterhin „heute" heisst und nicht sechs Leerzeichen).
+- **tar-Disketten (`tar720`, `FsType::Tar`, 2026-10-17, `core/filesystem/tar/`, Entwurf
+  `doc/design/33_cqm.md` §4a).**  Ein roher `tar`-Strom ab Sektor 0, kein Dateisystem, **nur
+  lesbar** (`put`/`rm`/`attr`/`create` sagen es; `setReadOnly(false)` wirkt nicht,
+  `readOnlyForced()`).  Vier Festlegungen: **(1) Die Erkennung kommt ZULETZT** — hinter der
+  CP/A-Regel, nicht über `detect_rank`: ein tar-Kopf mit gültiger Prüfsumme auf einer
+  CP/M-/WEGA-/NDOS-Diskette ist Dateiinhalt, nie der Datenträger (Wächter
+  `TarFs.EchteDateisystemeGehenVor`).  **(2) Diskette 2…n beginnt mitten in einer Datei**:
+  erkannt wird sie am ersten 512-ausgerichteten Kopf, hinter dem der Strom sauber ausläuft
+  (Nullblock/abgeschnitten/Ende) — das Anfangsstück ist `_fortsetzung_anfang.bin`.
+  **(3) Abgeschnitten ist ein Befund, kein Fehler** (`tar.abgeschnitten`, Warnung): die Datei
+  bleibt als Teilstück lesbar, `FileEntry::damaged` + `declared_size`, `.fileinfo`
+  `teilstueck=ist/soll`.  **(4) `tar-satz`/`DiskVolume::openTarSatz` verkettet die linearen
+  Ströme** (die Reihenfolge bestimmt der Aufrufer) und ist ein normales, schreibgeschütztes
+  Volume — `extractAll`, `check`, `.fileinfo` gehen unverändert.  Namen werden relativ gemacht
+  (führendes `/` weg, `..` → `__`, sonst Zip-Slip); je Name gilt die LETZTE Fassung.  Es
+  kommt nur tar vor (cpio an keinem der 142 Abbilder).  Wächter `TarFs.*`, `CqmDiskVolume.*`,
+  `TarEchtdaten.*` (mit `K1520_CQM_DIR`, Gegenprobe GNU `tar -tvf`), `test_disktool_tar.py`.

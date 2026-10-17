@@ -877,6 +877,23 @@ Zwei Dinge, die dabei auffallen können:
 * *„die Diskette trägt ein MS-DOS-Dateisystem (FAT)"* — FORMAT.COM kann DOS-Disketten
   anlegen (Menüpunkte `{MSDOS}`).  Die liest das Wirtssystem, nicht dieses Werkzeug.
 
+## tar-Disketten und `tar-satz`
+
+84 der 142 P8000-Abbilder (`doc/design/33_cqm.md` §4a) tragen einen rohen `tar`-Strom ab
+Sektor 0 statt eines Dateisystems. Profil `tar720` (nur lesbar; `put`/`rm`/`attr`/`create`
+melden das ausdrücklich), Erkennung zuletzt, nach CP/A-Regel und allen echten
+Dateisystemen. `ls -l`, `get`, `info`, `check` wie bei WEGA (UNIX-Spalten, `.fileinfo`
+mit `fs=tar`). Befunde: `tar.abgeschnitten` (Warnung; Teilstück bleibt lesbar),
+`tar.fortsetzung`, `tar.pruefsumme` (Fehler), `tar.doppelt`, `tar.pfad` (Hinweis).
+
+```
+k1520disktool tar-satz ariane1.cqm ariane2.cqm            # Namen des ganzen Stroms
+k1520disktool tar-satz -l w11data1.cqm … w11data7.cqm      # ls -l
+k1520disktool tar-satz ariane1.cqm ariane2.cqm --to aus/   # vollstaendig entpacken
+```
+Die Datenstroeme werden in der angegebenen Reihenfolge verkettet; die Reihenfolge
+bestimmt der Aufrufer (Satznamen). Exit 1 nur bei einem Befund `Fehler`.
+
 ## Dateisysteme ergänzen
 
 `data/formats.yaml` hat zwei Sektionen: `formats:` (Physik) und `filesystems:`

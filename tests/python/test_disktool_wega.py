@@ -1,10 +1,10 @@
 """WEGA-(UNIX-)Disketten im DiskTool: Eigenschaften, Archiv, `.fileinfo`.
 
-Der Fehler, den dieses Modul hält: das DiskTool unterschied nur „CP/M oder nicht" und
-behandelte jede Diskette mit gefülltem Typfeld wie UDOS.  Bei WEGA steht dort aber
-eine Dateiart (`-`, `d`, `c`), und die Datei trägt eine Inode (Modus, uid, gid,
-Zeiten) statt eines Kopfsektors.  Alle Fälle laufen an einer **selbst angelegten**
-WEGA-Diskette — kein Fremdabbild nötig.
+Der Fehler, den dieses Modul haelt: das DiskTool unterschied nur „CP/M oder nicht" und
+behandelte jede Diskette mit gefuelltem Typfeld wie UDOS.  Bei WEGA steht dort aber
+eine Dateiart (`-`, `d`, `c`), und die Datei traegt eine Inode (Modus, uid, gid,
+Zeiten) statt eines Kopfsektors.  Alle Faelle laufen an einer **selbst angelegten**
+WEGA-Diskette — kein Fremdabbild noetig.
 """
 
 import hashlib
@@ -71,7 +71,7 @@ def test_filesystem_family_is_asked_not_guessed(wega_disk):
         assert d.filesystem_type == "wega"
         assert d.ist_wega and not d.ist_udos and not d.ist_cpm
         e = _eintrag(d, "bin/hallo")
-        # Genau das, woran das alte Werkzeug scheiterte: ein gefülltes Typfeld.
+        # Genau das, woran das alte Werkzeug scheiterte: ein gefuelltes Typfeld.
         assert e.type == "-"
         assert e.ist_unix
         assert (e.unix_mode, e.unix_uid, e.unix_gid) == (0o104711, 5, 6)
@@ -131,7 +131,7 @@ def test_dialog_edits_mode_owner_and_time_as_one_transaction(window, wega_disk):
     window.set_read_only(False)
     d = _dialog(window, "etc/passwd")
 
-    # Kästchen und Oktalfeld halten einander fest
+    # Kaestchen und Oktalfeld halten einander fest
     d.f_rechte[(0, 4)].setChecked(True)                    # Andere: lesen
     assert d.f_oktal.text() == "0604"
     assert d.l_modus.text() == "-rw----r--"
@@ -147,7 +147,7 @@ def test_dialog_edits_mode_owner_and_time_as_one_transaction(window, wega_disk):
     e = _eintrag(window.tool, "etc/passwd")
     assert (e.unix_mode, e.unix_uid, e.unix_gid, e.unix_mtime) == (
         0o100755, 12, 34, 981173106)
-    # Dateiart, Inode, Größe und Links sind Struktur und bleiben
+    # Dateiart, Inode, Groesse und Links sind Struktur und bleiben
     assert e.type == "-" and e.size == 21 and e.unix_nlink == 1
 
 
@@ -193,7 +193,7 @@ def test_catalogue_is_ls_style_without_udos_terms(window, wega_disk, tmp_path):
     assert "-rws--x--x" in text                                # ls -l-Modus
     assert "-rw-------" in text and "drwxr-x---" in text
     assert "0104711" in text                                   # Oktalmodus
-    # Keine UDOS-Begriffe (Typ P1, Eigenschaften WELS, Satzlänge, ENTRY …)
+    # Keine UDOS-Begriffe (Typ P1, Eigenschaften WELS, Satzlaenge, ENTRY …)
     for udos in ("UDOS", "PROCEDURE", "Satzlaenge", "ENTRY", "MEMORY PROTECT",
                  "Side0", "Nutzerbereich", "CP/M"):
         assert udos not in text, udos
@@ -230,7 +230,7 @@ def test_archive_inventory_carries_unix_keys_additively(window, wega_disk, tmp_p
         assert "dateien/bin/hallo.fileinfo" in anhang
         assert "dateien/udos-dateiangaben.txt" not in anhang
 
-        # Nichts fällt unter den Tisch: jedes Mitglied der .zip ist erklärt
+        # Nichts faellt unter den Tisch: jedes Mitglied der .zip ist erklaert
         erklaert = (set(je_pfad) | anhang
                     | {daten["image"]["path"], daten["catalogue"]["path"], INVENTAR_DATEI})
         assert {n for n in namen if not n.endswith("/")} == erklaert
@@ -241,7 +241,7 @@ def test_archive_inventory_carries_unix_keys_additively(window, wega_disk, tmp_p
 
 
 def test_archive_roundtrip_restores_unix_attributes(window, wega_disk, tmp_path):
-    """Archiv → Ordner → neue Diskette: Modus, uid, gid und mtime kommen zurück."""
+    """Archiv → Ordner → neue Diskette: Modus, uid, gid und mtime kommen zurueck."""
     from app.core_binding.k1520disk import DiskTool
 
     assert window.open_image(wega_disk)
@@ -259,7 +259,7 @@ def test_archive_roundtrip_restores_unix_attributes(window, wega_disk, tmp_path)
             e = _eintrag(d, name)
             assert (e.unix_mode, e.unix_uid, e.unix_gid, e.unix_mtime) == (
                 alt.unix_mode, alt.unix_uid, alt.unix_gid, alt.unix_mtime), name
-        # Zubehör kam nicht als Datei mit
+        # Zubehoer kam nicht als Datei mit
         assert not any("fileinfo" in e.name or "dateiangaben" in e.name for e in d.list())
 
 

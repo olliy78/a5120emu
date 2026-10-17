@@ -111,6 +111,27 @@ als `.tar`) — ignoriert, sie sind keine gueltigen CQMs; `discs/WEGA3.0/` entha
 die byteidentisch zu denen in `discs/` sind, und `*_cqm.scp`-Flussabbilder (nicht Teil
 dieses Auftrags).
 
+## 4a. tar-Disketten (Stand 2026-10-17)
+
+Befund an den 142 Abbildern: **84 tragen einen rohen `tar`-Strom ab Sektor 0**, davon 73 mit
+Kopf bei Byte 0 und 11 als **Fortsetzung** (Diskette 2…n eines Satzes; erster Kopf bei
+Byte 512…296448).  Reines V7-tar (Magic leer, Typ `0`, vier harte Links in `mgen`), kein
+cpio, 4146 Einträge, keine Dopplungen; 204…217 Namen je Satz absolut (`/z/ariane/…`).
+Sätze mit abgeschnittener Datei am Diskettenende: ariane1, konsul1/2, lcc1, psc1,
+w11data1–4/6, wegaf771; die Verkettung (`tar-satz`) macht sie vollständig und entspricht
+byteweise den `.tar`-Dateien.  Hinter dem Archivende (Nullblock) steht Altbestand der
+Formatierung; er wird nicht gelesen.  Die einzige verbleibende Diskette ohne Erkennung ist
+`wdos_dcp` (MS-DOS/FAT).  Tabelle: Scratchpad `cqm_erkennung2.txt` (tar720 84, wega720 31,
+udos1715 12, cpa_auto 7, scpx640 7, nichts 1).
+
+Umsetzung: `core/filesystem/tar/tar_fs.{h,cpp}` (`TarFileSystem`, `TarQuelle` über
+Diskette oder Speicher), `FsType::Tar`, Profil `tar720` in `data/formats.yaml`
+(Begründung dort: Erkennung zuletzt; ein Eintrag, nur 720K belegt).  Erkennung:
+gültige Kopfpruefsumme (vorzeichenlos oder -behaftet), druckbarer Name, plausible Groesse;
+Typen `0–7`, GNU `L`/`K`, `x`/`g` werden übersprungen.  `DiskVolume::openTarSatz`
+verkettet die linearen Ströme; CLI `k1520disktool tar-satz`.  Befunde `tar.abgeschnitten`,
+`tar.fortsetzung`, `tar.pruefsumme`, `tar.doppelt`, `tar.pfad`.
+
 ## 5. Entscheidungen
 
 1. **Nur lesen.**  Ein Schreib-Pfad braeuchte einen RLE-Packer mit dem gleichen
@@ -129,12 +150,12 @@ dieses Auftrags).
    Erklaerung abgelehnt.
 6. **Kommentar**: `DiskImage::cqmInfo()->comment` / `DiskVolume::cqmInfo()`; `k1520disktool
    info` druckt eine Zeile `CopyQM: …`.  Die C-ABI bietet **noch keinen Zugriff** — er
-   braeuchte eine neue Funktion in `k1520_disk_api` samt ctypes-Deklaration in `app/`
-   (bewusst nicht Teil dieses Auftrags, siehe offene Punkte).
+   braeuchte eine neue Funktion in `k1520_disk_api` samt ctypes-Deklaration in `app/`.
+   **Nachgetragen:** `k1520d_container_info(h, key)` + `DiskTool.container_info()`.
 
 ## 6. Offen
 
-* C-ABI: `k1520d_cqm_comment(h)` (+ ctypes, GUI-Anzeige) — noch nicht vorhanden.
+* GUI-Anzeige des Kommentars (die C-ABI `k1520d_container_info` steht).
 * GUI-Dateidialoge (`app/`) kennen `.cqm` noch nicht.
 * Interleave/Skew werden gemeldet, aber nicht angewandt; ein CQM mit echtem Interleave im
   Strom (alte CopyQM-Versionen, `interleave == 0`) ist an keinem Abbild beobachtet.

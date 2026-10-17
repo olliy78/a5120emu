@@ -272,7 +272,8 @@ def inhaltsverzeichnis(tool: "DiskTool", quelle: str = "",
     # Die Art kommt aus dem Dateisystem, nicht aus der Typspalte: bei UDOS ist `type`
     # ein Dateityp (P1), bei WEGA eine Dateiart (-/d/c), bei CP/M leer — „hat einen
     # Typ => UDOS" machte aus jeder WEGA-Diskette eine UDOS-Diskette.
-    hat_wega = tool.ist_wega
+    # UNIX-Sicht (ls -l, unix:-Schluessel): WEGA und tar-Disketten (nur lesbar)
+    hat_wega = tool.ist_wega or tool.ist_tar
     hat_udos = (not hat_wega) and (tool.ist_udos or any(e.type for e in eintraege))
     hat_cpm = (not hat_wega) and (
         any(e.user or e.attrs in ("RO", "SYS", "ARC") for e in eintraege)

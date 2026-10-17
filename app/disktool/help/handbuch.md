@@ -140,6 +140,18 @@ halber Geschwindigkeit in einem anderen Aufzeichnungsverfahren geschrieben als d
 Rest. Das Werkzeug führt das mit, auch beim Zurückschreiben; zu sehen ist es im
 Diskeditor und in der Formatzeile.
 
+## tar-Disketten — ein Archiv statt eines Dateisystems
+
+Viele P8000-Lieferdisketten tragen **kein Dateisystem**: jemand hat mit `tar` direkt auf
+die rohe Diskette geschrieben. Das Werkzeug erkennt das als `tar720` (nur lesbar, immer
+als letzter Versuch hinter allen echten Dateisystemen) und zeigt Modus, Besitzer und
+Zeit wie bei WEGA. Mehrere Disketten eines Satzes sind **ein** Strom: die letzte Datei
+einer Diskette ist dann abgeschnitten (`tar.abgeschnitten`, in der Liste `[DEFEKT]`,
+das `.fileinfo` trägt `teilstueck=ist/soll`), und Diskette 2…n beginnt mitten in einer
+Datei (`tar.fortsetzung`, das Anfangsstück liegt als `_fortsetzung_anfang.bin` bei).
+Vollständig werden die Dateien mit `k1520disktool tar-satz abbild1 abbild2 … --to ordner`
+(Reihenfolge wie in den Namen, `ariane1`, `ariane2`).
+
 ## UDOS1715 — dasselbe UDOS, anderes Dateisystem
 
 Disketten vom **PC 1715** tragen UDOS mit dem Treiber **NDOS** statt ZDOS. Das

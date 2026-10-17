@@ -17,6 +17,7 @@
  * k1520disktool boot-scpx <SYL17> <CCPBD17> <BIOS> <aus.bin> # SCPX-Systemspuren des PRG
  * k1520disktool info   <abbild> [--fs NAME]
  * k1520disktool check  <abbild>
+ * k1520disktool tar-satz <abbild…> [--to ordner] [-l]  # Mehrdisketten-tar-Strom
  * k1520disktool formats
  * ```
  *
@@ -156,6 +157,10 @@ void gebrauch() {
         "                                             Verzeichnisplatz; --restore traegt\n"
         "                                             den Fund auf der Diskette ein\n"
         "  measure <abbild>                         Geometrie messen (auch ohne Dateisystem)\n"
+        "  tar-satz <abbild1> <abbild2>… [--to ordner] [-l]\n"
+        "                                           Disketten mit rohem tar-Strom (ohne Dateisystem):\n"
+        "                                           Strome in dieser Reihenfolge verketten, auflisten\n"
+        "                                           bzw. mit --to vollstaendig entpacken\n"
         "  formats                                  bekannte Dateisysteme auflisten\n\n"
         "P8000-Plattenabbild (WEGA, PAR in Zylinder 0): ls/info/check/get/put/rm/mkdir;\n"
         "  Namen mit Partition vorn (md0 = /usr, md2 = /, md3 = /tmp, md4 = /z):\n"
@@ -449,7 +454,7 @@ int cmd_ls(const Optionen& o) {
         for (const FileEntry& e : liste)
             std::cout << (seiten ? v->volumeDir(e.volume) + "/" : "")
                       << e.qualifiedName() << "\n";
-    } else if (v->istWega()) {
+    } else if (v->istUnix()) {
         // UNIX-Sicht wie `ls -l`: Rechte, Links, Besitzer, Gruppe, Groesse, Zeit, Pfad
         for (const FileEntry& e : liste) {
             std::string groesse = std::to_string(e.size);
@@ -482,6 +487,36 @@ int cmd_ls(const Optionen& o) {
     }
     info_aus << "\n";
     return kOk;
+}
+
+int cmd_tar_satz(const Optionen& o) {
+    if (o.rest.size() < 2) { std::cerr << "Fehler: kein Abbild angegeben\n"; return kFehler; }
+    const std::vector<std::string> pfade(o.rest.begin() + 1, o.rest.end());
+    std::string err;
+    auto v = DiskVolume::openTarSatz(pfade, formate(), dateisysteme(), err);
+    if (!v) { std::cerr << "Fehler: " << err << "\n"; return kNichtErkannt; }
+
+    const std::string bericht = v->checkReport().alsText();
+    if (!bericht.empty()) std::cerr << bericht;
+    const bool fehler = v->checkReport().zaehlerAb(FsSeverity::Fehler) > 0;
+
+    if (!o.ziel.empty()) {
+        TransferOptions t;
+        t.overwrite = o.force;
+        if (!v->extractAll(o.ziel, t)) { std::cerr << "Fehler: " << v->lastError() << "\n";
+                                         return kFehler; }
+        std::cout << v->list().size() << " Eintraege nach " << o.ziel << "\n";
+        return fehler ? kFehler : kOk;
+    }
+    for (const FileEntry& e : v->list()) {
+        if (o.lang)
+            std::printf("%-10s %5d %5d %9llu %-16s %s%s\n", e.attributes.c_str(), e.unix_uid,
+                        e.unix_gid, static_cast<unsigned long long>(e.size), e.date.c_str(),
+                        e.name.c_str(), e.damaged ? "  [DEFEKT]" : "");
+        else
+            std::cout << e.name << "\n";
+    }
+    return fehler ? kFehler : kOk;
 }
 
 int cmd_info(const Optionen& o) {
@@ -987,7 +1022,7 @@ int cmd_get(const Optionen& o) {
             if (mit_seite && e.volume != muster.volume) continue;
             if (!passt(muster.name, e.qualifiedName())) continue;
             // WEGA: nur gewoehnliche Dateien haben Inhalt (Ordner entstehen mit)
-            if (v->istWega() && e.type != "-") continue;
+            if (v->istUnix() && e.type != "-") continue;
 
             std::string datei = e.qualifiedName();
             std::replace(datei.begin(), datei.end(), ':', '_');
@@ -1859,7 +1894,7 @@ int main(int argc, char** argv) {
     }
 
     // P8000-Plattenabbild (PAR in Z0/K0/S1): eigener Weg, mehrere WEGA-Partitionen
-    if (o.rest.size() >= 2 && befehl != "create" && befehl != "formats"
+    if (o.rest.size() >= 2 && befehl != "create" && befehl != "formats" && befehl != "tar-satz"
         && WegaPlatte::istPlatte(o.rest[1]))
         return platte(befehl, o);
 
@@ -1874,6 +1909,7 @@ int main(int argc, char** argv) {
     if (befehl == "boot-put") return cmd_boot_put(o);
     if (befehl == "boot-scpx") return cmd_boot_scpx(o);
     if (befehl == "info")    return cmd_info(o);
+    if (befehl == "tar-satz") return cmd_tar_satz(o);
     if (befehl == "save-as") return cmd_save_as(o);
     if (befehl == "measure") return cmd_measure(o);
     if (befehl == "check")   return cmd_check(o);

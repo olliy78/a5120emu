@@ -32,5 +32,9 @@ Voller Befund an 142 Abbildern: `doc/design/33_cqm.md`.
    (Laenge bei 0x6F), das Etikett ist NICHT der Kommentar.
 8. **Echtdaten-Tests nur mit `K1520_CQM_DIR`** (Ordner mit `*.cqm` + `*.tar`, z. B.
    `~/projects/robotron/P8000/discs`), sonst uebersprungen (~18 s).  Kein Abbild einchecken.
-9. **Offen**: C-ABI-Zugriff auf den Kommentar, `.cqm` in den GUI-Dateidialogen, nicht
+9. **C-ABI-Zugriff**: `k1520d_container_info(h, key)` (type, description, label, comment,
+   interleave, skew, cylinders, crc), Python `DiskTool.container_info()`.  Der Schreibschutz ist
+   `readOnlyForced()` (Wächter `CqmDiskVolume.SchreibschutzIstErzwungen`).
+10. **84 Abbilder sind rohe tar-Ströme** (kein Dateisystem), erkannt als `tar720`
+   (`doc/merkposten/disktool.md`).  Offen: `.cqm` in den GUI-Dateidialogen, nicht
    gespeicherte Zylinder nur synthetisch geprueft.

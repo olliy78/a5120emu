@@ -891,3 +891,17 @@ filesystems:
     format:      k5601_9x512
     type:        wega
     detect_rank: -10
+
+  # ══ tar-Disketten (P8000-Lieferungen) ══════════════════════════════════════
+  # Eigener Grund fuer einen Eintrag: 84 der 142 P8000-Disketten tragen KEIN
+  # Dateisystem, sondern einen `tar`-Strom direkt ab Sektor 0 (Mehrdisketten-Saetze
+  # sind EIN Strom).  Nur lesbar (core/filesystem/tar/tar_fs.h).  Die Erkennung
+  # laeuft in disk_volume.cpp als LETZTER Versuch hinter CP/A-Regel und allen echten
+  # Dateisystemen; detect_rank 900 ist nur die Dokumentation davon.  Alle bekannten
+  # Abbilder sind 720K — fuer andere Geometrien gibt es kein Beispiel.
+
+  - name:        tar720
+    description: "tar-Strom ohne Dateisystem (P8000-Lieferdiskette) — 720K, nur lesbar"
+    format:      k5601_9x512
+    type:        tar
+    detect_rank: 900

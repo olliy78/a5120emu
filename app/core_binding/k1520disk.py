@@ -137,6 +137,8 @@ _lib.k1520d_detect.argtypes = [_CS]
 _lib.k1520d_detect.restype = _CS
 _lib.k1520d_detected_format.argtypes = [_H]
 _lib.k1520d_detected_format.restype = _CS
+_lib.k1520d_container_info.argtypes = [_H, _CS]
+_lib.k1520d_container_info.restype = _CS
 _lib.k1520d_detected_fs.argtypes = [_H]
 _lib.k1520d_detected_fs.restype = _CS
 _lib.k1520d_detection_unambiguous.argtypes = [_H]
@@ -1210,6 +1212,17 @@ class DiskTool:
     def filesystem(self) -> str:
         return _s(_lib.k1520d_detected_fs(self._h))
 
+    def container_info(self) -> dict:
+        """Auskunft über den Container der Datei: ``type`` (``img``/``hfe``/``dmk``/``cqm``);
+        bei ``.cqm`` zusätzlich ``description``, ``label``, ``comment``, ``interleave``,
+        ``skew``, ``cylinders`` (``gespeichert/gesamt``) und ``crc`` (``ok``/``falsch``/
+        ``nicht geprueft``).  Bei anderen Containern nur ``type``."""
+        keys = ["type"]
+        if _s(_lib.k1520d_container_info(self._h, _b("type"))) == "cqm":
+            keys += ["description", "label", "comment", "interleave", "skew",
+                     "cylinders", "crc"]
+        return {k: _s(_lib.k1520d_container_info(self._h, _b(k))) for k in keys}
+
     @property
     def filesystem_type(self) -> str:
         """``'cpm'`` | ``'udos'`` | ``'udos1715'`` | ``''`` — die Familie.
@@ -1227,6 +1240,12 @@ class DiskTool:
     def ist_wega(self) -> bool:
         """UNIX-Dateisystem (WEGA): Modus/uid/gid statt UDOS- oder CP/M-Angaben."""
         return self.filesystem_type == "wega"
+
+    @property
+    def ist_tar(self) -> bool:
+        """Roher ``tar``-Strom auf der Diskette (kein Dateisystem, nur lesbar):
+        UNIX-Angaben (Modus/uid/gid) wie bei WEGA, aber ohne Schreib- und Änderungsfunktionen."""
+        return self.filesystem_type == "tar"
 
     @property
     def ist_udos(self) -> bool:

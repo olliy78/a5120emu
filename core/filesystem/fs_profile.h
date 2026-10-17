@@ -41,7 +41,10 @@ enum class FsType : uint8_t {
     /// @brief WEGA (UNIX System III des P8000): 512-B-Bloecke, Superblock in Block 1,
     ///        Inodes ab Block 2, Verzeichnisbaum.  Kein Magic — die Erkennung ist eine
     ///        Plausibilitaetspruefung.  @see doc/design/27_wega_dateisystem.md
-    Wega
+    Wega,
+    /// @brief Tar-Strom direkt auf der Diskette (kein Dateisystem), nur lesbar.
+    ///        @see core/filesystem/tar/tar_fs.h
+    Tar
 };
 
 /// @brief Gehoert der Typ zur UDOS-Familie? (gemeinsame Kopfsektorfelder, Typ/Props)

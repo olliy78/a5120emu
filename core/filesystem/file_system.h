@@ -56,6 +56,7 @@ struct FileEntry {
     uint16_t    stack_size = 0;  ///< UDOS: STACK SIZE (Kopf 126)
     bool        hidden  = false; ///< CP/M SYS · UDOS SECRET
     bool        damaged = false; ///< CRC-Fehler oder Kettenbruch beim Lesen
+    uint64_t    declared_size = 0;  ///< tar: Sollgroesse laut Kopf, wenn die Datei abgeschnitten ist (> size)
     /// @brief Stehen die Angaben jenseits des Namens schon fest?
     ///
     /// Bei CP/M immer @c true — dort steht alles im Verzeichniseintrag selbst.  Bei

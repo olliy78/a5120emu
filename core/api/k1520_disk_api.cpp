@@ -64,7 +64,7 @@ struct Handle {
     // Puffer je Getter — die Rueckgabe gilt bis zum naechsten Aufruf DERSELBEN Funktion.
     std::string s_error, s_name, s_type, s_attrs, s_date, s_dir, s_label, s_created,
                 s_segments, s_blocks;
-    std::string s_fmt, s_fs, s_alt, s_remarks, s_fit, s_check;
+    std::string s_fmt, s_fs, s_alt, s_remarks, s_fit, s_check, s_container;
     std::string s_bid, s_bobj, s_btext, s_bsum;   ///< Puffer der Pruefung
     std::string s_sid, s_stitel, s_swarum;        ///< Puffer der Checkliste (§5a)
     std::string s_rid, s_rtext, s_rwhy;           ///< Puffer der Reparatur
@@ -353,6 +353,26 @@ extern "C" const char* k1520d_detected_format(K1520Disk h) {
 
 extern "C" const char* k1520d_detected_fs(K1520Disk h) {
     return h ? halte(H(h)->s_fs, H(h)->vol->detection().filesystem) : "";
+}
+
+extern "C" const char* k1520d_container_info(K1520Disk h, const char* key) {
+    if (!h || !key) return "";
+    const DiskVolume& v = *H(h)->vol;
+    const std::string k = key;
+    std::string w;
+    if (k == "type") {
+        w = v.containerName();
+    } else if (const CqmCodec::SourceInfo* c = v.cqmInfo()) {
+        if      (k == "description") w = c->description;
+        else if (k == "label")       w = c->label;
+        else if (k == "comment")     w = c->comment;
+        else if (k == "interleave")  w = std::to_string(c->interleave);
+        else if (k == "skew")        w = std::to_string(c->skew);
+        else if (k == "cylinders")   w = std::to_string(c->used_cyls) + "/" + std::to_string(c->total_cyls);
+        else if (k == "crc")         w = !c->crc_checked ? "nicht geprueft"
+                                       : c->crc_stored == c->crc_computed ? "ok" : "falsch";
+    }
+    return halte(H(h)->s_container, std::move(w));
 }
 
 extern "C" bool k1520d_detection_unambiguous(K1520Disk h) {
