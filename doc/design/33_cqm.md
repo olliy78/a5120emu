@@ -6,13 +6,12 @@ Tests `tests/unit/peripherals/test_cqm_codec.cpp`, Merkposten `doc/merkposten/cq
 ## 1. Aufgabe und Abgrenzung
 
 Die P8000-/WEGA-Disketten liegen als CopyQM-Abbilder vor (142 Dateien in
-`robotron/P8000/discs/`).  Der Kern soll sie **lesen** — Emulator (Mounten), DiskTool
+`robotron/P8000/discs/`).  Der Kern soll sie **lesen** (und seit 2026-10-17 auch **schreiben**,
+Abschnitt 7) — Emulator (Mounten), DiskTool
 (`ls`/`get`/`check`/`info`/`save-as`) und C-ABI (`k1520_mount…`, `k1520d_open`) — als
-vierter `ContainerType::Cqm` neben Img/Hfe/Dmk.  **Schreiben ist ausdruecklich nicht
-vorgesehen**: `CqmCodec::save()` scheitert mit einer Erklaerung, ein per CQM geladenes
-`DiskImage` hat `bindingWritable() == false` (Autosave und `flush()` fassen die Datei nie
-an), `DiskVolume` oeffnet es immer schreibgeschuetzt.  `saveAs`/`exportTo` in `.img`,
-`.hfe`, `.dmk` gehen.
+vierter `ContainerType::Cqm` neben Img/Hfe/Dmk.  **Schreiben war zunaechst ausdruecklich nicht
+vorgesehen** (`save()` scheiterte, Schreibschutz erzwungen); das ist mit Abschnitt 7 ueberholt.
+`saveAs`/`exportTo` in `.img`, `.hfe`, `.dmk` gingen immer.
 
 ## 2. Format
 
@@ -134,9 +133,7 @@ verkettet die linearen Ströme; CLI `k1520disktool tar-satz`.  Befunde `tar.abge
 
 ## 5. Entscheidungen
 
-1. **Nur lesen.**  Ein Schreib-Pfad braeuchte einen RLE-Packer mit dem gleichen
-   Tabellenfehler; fuer Archivdateien ohne Gaps/CRC-Fehlerinformation lohnt er nicht.
-   `.img` ist fuer dieselbe Aufgabe verlustfrei genug.
+1. ~~Nur lesen.~~  **Ueberholt (2026-10-17): schreibbar, siehe Abschnitt 7.**
 2. **Strikt bei Kopf und Pruefwert**: falsche Kennung, falsches Kopfpruefbyte, abgeschnittene
    Datei, ueberlanger Block, falscher Pruefwert → Laden scheitert.  Pruefwert 0 (alte
    CopyQM-Versionen) wird nicht geprueft (`crc_checked = false`).  Bytes hinter dem Strom
@@ -146,8 +143,9 @@ verkettet die linearen Ströme; CLI `k1520disktool tar-satz`.  Befunde `tar.abge
    und scheitert dort.
 4. **`FsProfile::allowsContainer("cqm")` = `allow_img`** — ein CQM traegt nur Sektordaten
    und damit genau das, was auch ein `.img` traegt (UDOS mit Gap-Verkettung also nie).
-5. **`DiskVolume` oeffnet `.cqm` immer schreibgeschuetzt**, `setReadOnly(false)` wird mit
-   Erklaerung abgelehnt.
+5. ~~`DiskVolume` oeffnet `.cqm` immer schreibgeschuetzt.~~  **Ueberholt (Abschnitt 7):** wie
+   `.img` beim Oeffnen geschuetzt, aber frei aufhebbar; erzwungen bleibt der Schutz nur bei
+   tar-Disketten.
 6. **Kommentar**: `DiskImage::cqmInfo()->comment` / `DiskVolume::cqmInfo()`; `k1520disktool
    info` druckt eine Zeile `CopyQM: …`.  Die C-ABI bietet **noch keinen Zugriff** — er
    braeuchte eine neue Funktion in `k1520_disk_api` samt ctypes-Deklaration in `app/`.
@@ -160,3 +158,58 @@ verkettet die linearen Ströme; CLI `k1520disktool tar-satz`.  Befunde `tar.abge
 * Interleave/Skew werden gemeldet, aber nicht angewandt; ein CQM mit echtem Interleave im
   Strom (alte CopyQM-Versionen, `interleave == 0`) ist an keinem Abbild beobachtet.
 * Nicht gespeicherte Zylinder (`used < total`) sind nur synthetisch getestet.
+
+## 7. Schreiben (Stand 2026-10-17)
+
+`CqmCodec::save/encode` (+ `packRle`), `DiskImage` bindet eine `.cqm` schreibbar
+(`bindingWritable() == true`: Autoflush nach 0,5 s Schreibpause, `flush()`, `saveAs()`,
+`create()` mit Format), `FloppyDriveV2::mount` und `DiskVolume` erzwingen **keinen** Schreibschutz
+mehr (`k1520d_read_only_forced` bleibt fuer tar und nur gemessene Geometrien).
+
+**Darstellbar** ist ein Medium, wenn `DiskMedium::rawCompatible()` gilt (wie `.img`) **und**:
+alle Spuren MFM mit voller Datenrate (CopyQM kennt kein FM — eine FM-Spur wird abgelehnt,
+statt still als MFM wiedergeladen zu werden); je Spur gleich viele (1..64) gleich grosse
+(128..4096) Sektoren mit lueckenlosen IDs `base..base+n-1` (`base` >= 1, Kopfbyte 0x71 =
+`base-1`), auf allen Spuren identisch; beide Seiten (oder, wenn Seite 1 ganz unformatiert
+ist, eine); Zylinder 0..last beschrieben, unformatierte Endzylinder werden nicht gespeichert
+(`used < total`, der Leser fuellt sie mit 0xF6).  Alles andere (gemischte Geometrie wie die
+CP/A-Systemspuren mit 128 B, unformatierte Luecken, Doppelschritt-Medien, Daten hinter der CRC)
+wird mit Begruendung abgelehnt.
+
+**Nie ein Teilzustand:** zuerst wird die ganze Datei im Speicher aufgebaut und **durch den
+Leser gegengeprueft** (entpackte Daten gleich, Pruefwert ok), dann in `<datei>.k1520tmp`
+geschrieben und per `rename` ersetzt.  Scheitert eine Stufe, bleibt die Zieldatei unveraendert,
+die Nachbardatei wird entfernt.  (Die anderen Codecs schreiben noch in-place; nur `.cqm` tut
+das so.)
+
+**Politik bei nicht darstellbarem Medium (wie `.img`):** `flush()` scheitert mit Grund in
+`DiskImage::lastError()`, `saveFailed()` wird wahr, die Datei bleibt, die Maschine laeuft mit
+dem Speicherabbild weiter; `autoFlush` versucht es erst nach der naechsten Aenderung (Medium-
+Revision) wieder.  Neu: `FloppyDriveV2` haengt dann den Hinweis `Abbild nicht speicherbar:
+<Grund>` an `notices()` (gilt fuer jeden Container) und nimmt ihn beim naechsten Erfolg zurueck.
+
+**Kopffelder bleiben:** `SourceInfo` traegt jetzt `raw_header` (133 Byte) und `comment_raw`.
+Beim Schreiben mit Vorlage (Autoflush, `flush`, `saveAs`/`exportTo` einer geladenen `.cqm`)
+bleiben bei **gleicher Geometrie** alle Kopfbytes ausser Geometrie/Pruefwert/Kopfpruefbyte
+erhalten (Bezeichnung, Dichte, Blind, Etikett, Zeit/Datum, Interleave/Skew, Quellaufwerk,
+Unbekanntes) samt Kommentar.  Aendert sich die Geometrie, gelten nur Kommentar und Etikett;
+Bezeichnung/Dichte/Interleave werden neu gesetzt.  Ohne Vorlage (neue Datei, Umweg ueber
+`.hfe`): Version 0x14, Bezeichnung `"<KB>K Double-Sided|Single-Sided"` (KB =
+Zylinder x Seiten x Sektoren x Groesse / 1024), Blind 1, Dichte 0 (1 bei 512 B x >= 15,
+2 bei >= 30 Sektoren), Etikett `"** NONE ** "`, Zeit/Datum 0, Interleave 1, Skew 0,
+Kommentar `"Image file created by k1520emu"`.
+
+**RLE:** ein Strom ueber die ganze Diskette (Bloecke ueber Sektor-/Spurgrenzen), Wiederholung
+ab 5 gleichen Bytes, Bloecke hoechstens 32767 Byte (int16; -32768 und 0 werden nie
+erzeugt).  Der Schnitt ist **nicht** der des Originals — Datei1 -> Medium -> Datei2 ist
+nicht byteidentisch (die 142 Abbilder werden gleich gross bis ~1 % kleiner/groesser), wohl aber
+inhaltsgleich.  **Pruefwert 0 ist doppeldeutig:** CRC ueber nur Nullbytes ist 0 und gilt beim
+Lesen als "nicht gesetzt" (`crc_checked == false`) — Eigenheit des Formats.
+
+**Gegenprobe:** `CqmEchtdaten.SpeichernUndWiederLadenIstVerlustfrei` (142 Abbilder, mit
+`K1520_CQM_DIR`): laden -> speichern -> laden, Sektordaten, Spurbytes/Marken und alle
+Kopffelder gleich.  **libdsk (`drvqm.c`) steht nicht zur Verfuegung** und wurde nicht
+gegengeprueft; stattdessen bestaetigte eine unabhaengig geschriebene Python-Dekodierung samt
+`tests/python/cqm_bau.py::cqm_crc` und Kopfpruefbyte die erzeugten Dateien.  Ob ein echtes
+CopyQM sie anstandslos nimmt, ist unbelegt (Annahme: ja, da Kopf und Strom dem Muster der
+142 Originale folgen).

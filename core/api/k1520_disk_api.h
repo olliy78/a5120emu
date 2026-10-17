@@ -43,8 +43,8 @@ typedef enum {
 
 /**
  * @brief Diskette oeffnen.
- * @param path       `.img`, `.hfe`, `.dmk` oder `.cqm` (CopyQM, nur lesbar: wird immer
- *                   schreibgeschuetzt geoeffnet)
+ * @param path       `.img`, `.hfe`, `.dmk` oder `.cqm` (CopyQM; schreibbar, soweit das
+ *                   Medium als Sektorstrom darstellbar ist)
  * @param fs_name    Dateisystem erzwingen; NULL oder "" = erkennen
  * @param read_only  **so oeffnen, dass nichts kaputtgehen kann.**  Beim blossen
  *                   Lesen ist das die richtige Wahl; Aendern verlangt danach den
@@ -231,7 +231,7 @@ K1520_API bool k1520d_export_image(K1520Disk h, const char* path);
 /// @brief Schreibschutz abfragen bzw. setzen (Vorgabe beim Oeffnen: geschuetzt).
 K1520_API bool k1520d_read_only(K1520Disk h);
 K1520_API void k1520d_set_read_only(K1520Disk h, bool ro);
-/// @brief Ist der Schreibschutz UNAUFHEBBAR (.cqm, tar-Diskette, nur gemessene Geometrie)?
+/// @brief Ist der Schreibschutz UNAUFHEBBAR (tar-Diskette, nur gemessene Geometrie)?
 K1520_API bool k1520d_read_only_forced(K1520Disk h);
 /// @brief Sicherungskopie beim ersten Schreiben an-/abschalten (Vorgabe: an).
 K1520_API void k1520d_set_backup(K1520Disk h, bool on);

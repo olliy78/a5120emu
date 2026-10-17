@@ -1123,8 +1123,6 @@ constexpr const char* kNurLesbarTar =
     "Diese Diskette traegt einen tar-Strom ohne Dateisystem und ist nur lesbar "
     "(put/rm/attr gibt es dort nicht).  Zum Weiterverarbeiten mit get/tar-satz "
     "extrahieren.";
-constexpr const char* kNurLesbarCqm =
-    "CopyQM-Abbilder (.cqm) sind nur lesbar — erst als .img, .hfe oder .dmk exportieren.";
 
 }  // namespace
 
@@ -1211,14 +1209,6 @@ std::unique_ptr<DiskVolume> DiskVolume::oeffnenMit(std::unique_ptr<DiskImage> vo
     // Spurstrom, also auch alles hinter der Daten-CRC (UDOS-Sektorkontrollblock).
     const std::string ext   = vorhanden ? std::string("hfe") : endung(path);
     const bool        istImg = (ext == "img");
-
-    // CopyQM-Abbilder sind nur lesbar (der Codec kann nicht schreiben): die Diskette
-    // wird schreibgeschuetzt geoeffnet, Aenderungen gingen sonst nur in den Speicher.
-    // Das Abbild kommt per `export`/`saveAs` in .img/.hfe/.dmk heraus.
-    if (ext == "cqm") {
-        read_only      = true;
-        dv->read_only_ = true;
-    }
 
     // ── Fall A': die CP/A-Regel ausdruecklich anfordern ──────────────────────
     // `--fs cpa_auto` heisst „nicht im Katalog nachsehen, rechnen" — die Geometrie
@@ -1664,13 +1654,11 @@ std::string DiskVolume::containerName() const {
 
 std::string DiskVolume::schreibschutzText() const {
     if (profile_ && profile_->type == FsType::Tar) return kNurLesbarTar;
-    if (disk_ && disk_->container() == ContainerType::Cqm) return kNurLesbarCqm;
     return kSchreibschutz;
 }
 
 bool DiskVolume::readOnlyForced() const {
-    return nur_lesen_erzwungen_ || (profile_ && profile_->type == FsType::Tar)
-        || (disk_ && disk_->container() == ContainerType::Cqm);
+    return nur_lesen_erzwungen_ || (profile_ && profile_->type == FsType::Tar);
 }
 
 const DiskFormat* DiskVolume::rohFormat() const {
@@ -3254,10 +3242,6 @@ void DiskVolume::setReadOnly(bool ro) {
                       "taugt als Vorlage).";
         return;
     }
-    if (!ro && disk_ && disk_->container() == ContainerType::Cqm) {
-        last_error_ = kNurLesbarCqm;
-        return;
-    }
     read_only_ = ro;
     // Zweite Sperre eine Ebene tiefer: ein schreibgeschuetztes DiskImage schreibt
     // seine Datei auch dann nicht, wenn hier etwas durchrutscht — einschliesslich
@@ -3268,11 +3252,13 @@ void DiskVolume::setReadOnly(bool ro) {
 bool DiskVolume::exportImage(const std::string& path) const {
     if (!disk_) return fail("keine Diskette geoeffnet");
     std::optional<DiskFormat> of;
-    if (endung(path) == "img") {
+    const std::string zielEndung = endung(path);
+    if (zielEndung == "img" || zielEndung == "cqm") {
+        // Ein CopyQM-Abbild traegt wie ein .img nur Sektordaten.
         if (profile_ && !profile_->allow_img)
-            return fail("Dieses Dateisystem kann nicht als .img abgelegt werden "
+            return fail("Dieses Dateisystem kann nicht als ." + zielEndung + " abgelegt werden "
                         "(der UDOS-Sektorkontrollblock steht hinter der Daten-CRC).");
-        if (format_) of = *format_;
+        if (zielEndung == "img" && format_) of = *format_;
     }
     if (!disk_->exportTo(path, of)) return fail(disk_->lastError());
     return true;
@@ -3573,11 +3559,13 @@ bool DiskVolume::writeBootImageFile(const std::string& path, int volume) {
 bool DiskVolume::saveAs(const std::string& path) {
     if (!disk_) return fail("keine Diskette geoeffnet");
     std::optional<DiskFormat> of;
-    if (endung(path) == "img") {
+    const std::string zielEndung = endung(path);
+    if (zielEndung == "img" || zielEndung == "cqm") {
+        // Ein CopyQM-Abbild traegt wie ein .img nur Sektordaten.
         if (profile_ && !profile_->allow_img)
-            return fail("Dieses Dateisystem kann nicht als .img gespeichert werden "
+            return fail("Dieses Dateisystem kann nicht als ." + zielEndung + " gespeichert werden "
                         "(der UDOS-Sektorkontrollblock steht hinter der Daten-CRC).");
-        if (format_) of = *format_;
+        if (zielEndung == "img" && format_) of = *format_;
     }
     if (!disk_->saveAs(path, of)) return fail(disk_->lastError());
     path_ = path;

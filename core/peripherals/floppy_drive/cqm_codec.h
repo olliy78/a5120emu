@@ -1,6 +1,6 @@
 /**
  * @file cqm_codec.h
- * @brief CqmCodec – CopyQM-Abbild (`.cqm`) ⇄ @ref DiskMedium (**nur Lesen**).
+ * @brief CqmCodec – CopyQM-Abbild (`.cqm`) ⇄ @ref DiskMedium (Lesen und Schreiben).
  *
  * CopyQM (Sydex/Central Point) legt ein DOS-Diskettenabbild als **Sektorstrom** ab:
  * 133-Byte-Kopf, Kommentar, danach die Nutzdaten aller Sektoren in der Reihenfolge
@@ -37,7 +37,16 @@
  * von 68 Abbildern gegengeprueft), die Spur wird mit Interleave 1 gebaut — wie ein
  * `.img` gleicher Geometrie.
  *
- * Schreiben gibt es nicht (@ref save meldet einen klaren Fehler).
+ * Schreiben (@ref save, @ref encode): nur fuer Medien, die sich als Sektorstrom darstellen
+ * lassen — @ref DiskMedium::rawCompatible UND einheitliche MFM-Geometrie (je Spur gleich
+ * viele gleich grosse Sektoren, IDs lueckenlos `base…base+n-1`, beide Seiten bzw. nur
+ * Seite 0, nur am Ende unformatierte Zylinder).  Alles andere wird mit Begruendung
+ * abgelehnt, ohne die Zieldatei anzufassen.  Geschrieben wird in eine Nachbardatei und
+ * dann umbenannt (nie ein Teilzustand).  Ist eine @ref SourceInfo der Quelle da, bleiben
+ * Kommentar, Bezeichnung, Etikett, Zeit/Datum, Interleave/Skew und alle uebrigen
+ * Kopfbytes erhalten, solange die Geometrie unveraendert ist.  Der RLE-Schnitt ist NICHT
+ * der des Originals (Datei1 → Medium → Datei2 ist nicht byteidentisch, wohl aber
+ * inhaltsgleich).
  *
  * @see doc/design/33_cqm.md, doc/merkposten/cqm.md
  * @author Olaf Krieger
@@ -80,6 +89,8 @@ struct SourceInfo {
     std::string description;        ///< Bezeichnung ("720K Double-Sided")
     std::string label;              ///< Etikett; leer, wenn "** NONE **"
     std::string comment;            ///< Kommentartext des Abbilds (leer = keiner)
+    std::vector<uint8_t> raw_header;   ///< die 133 Kopfbytes wie gelesen (Vorlage fuer @ref save)
+    std::vector<uint8_t> comment_raw;  ///< Kommentarbytes wie gelesen (ohne Kuerzung)
     uint32_t crc_stored     = 0;
     uint32_t crc_computed   = 0;
     bool     crc_checked    = false;  ///< false: Datei traegt keinen Pruefwert (0)
@@ -115,7 +126,25 @@ bool decodeBuffer(const std::vector<uint8_t>& datei, std::vector<uint8_t>& raw,
 ///        cylinders, crc); unbekannter Schluessel = "".  Gemeinsam fuer DiskTool und Emulator.
 std::string infoField(const SourceInfo& si, const std::string& key);
 
-/// @brief Schreiben wird nicht unterstuetzt — liefert immer false mit Erklaerung.
+/**
+ * @brief Medium als CopyQM-Datei im Speicher aufbauen (nichts wird geschrieben).
+ * @param vorlage     Kopf der Quelldatei (Kommentar & Co. bleiben erhalten); darf nullptr sein
+ * @param out         Ausgabe: die vollstaendige Datei
+ * @param geschrieben Ausgabe (optional): Metadaten der erzeugten Datei, wie sie ein Leser sieht
+ * @return false mit Begruendung in @p err, wenn das Medium nicht darstellbar ist
+ */
+bool encode(const DiskMedium& in, const SourceInfo* vorlage, std::vector<uint8_t>& out,
+            SourceInfo* geschrieben, std::string& err);
+
+/// @brief RLE-Packer des Datenstroms (Wiederholung negativ, Literal positiv, Bloecke
+///        hoechstens 32767 Byte, ueber Sektor-/Spurgrenzen hinweg).
+std::vector<uint8_t> packRle(const std::vector<uint8_t>& raw);
+
+/// @brief Medium als @p path schreiben (erst Nachbardatei, dann umbenennen); siehe @ref encode.
+bool save(const std::string& path, const DiskMedium& in, const SourceInfo* vorlage,
+          SourceInfo* geschrieben, std::string& err);
+
+/// @brief Wie oben ohne Vorlage (Standardkopf).
 bool save(const std::string& path, const DiskMedium& in, std::string& err);
 
 }  // namespace CqmCodec

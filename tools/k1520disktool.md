@@ -2,7 +2,7 @@
 
 Holt Dateien von CP/A-, SCPX-, **UDOS**-, **UDOS1715**- und **SCP1700**-Disketten
 (CP/M-86 des A7100) und schreibt sie zurück —
-auf `.img`, `.hfe` und `.dmk`.  Dieselbe Bibliothek treibt die Oberfläche
+auf `.img`, `.hfe`, `.dmk` und `.cqm` (CopyQM).  Dieselbe Bibliothek treibt die Oberfläche
 (`run_disktool.sh`); Feinentwurf: `doc/design/13_k1520disktool.md`.
 
 Aufruf im Projekt immer über `tools/dev.sh tool k1520disktool …` — nie direkt aus
@@ -885,10 +885,28 @@ Zwei Dinge, die dabei auffallen können:
 * *„die Diskette trägt ein MS-DOS-Dateisystem (FAT)"* — FORMAT.COM kann DOS-Disketten
   anlegen (Menüpunkte `{MSDOS}`).  Die liest das Wirtssystem, nicht dieses Werkzeug.
 
+## CopyQM (`.cqm`) lesen und schreiben
+
+`.cqm` verhaelt sich wie `.img`: `put`/`rm`/`mkdir`/`repair`/`create`/`save-as` gehen, beim
+Oeffnen ist die Diskette (wie immer) geschuetzt, `put`/`rm` heben es auf.  Geometrie kommt aus
+dem Abbild, nicht aus einem Format; geschrieben wird nur, was sich als gleichmaessiger
+MFM-Sektorstrom darstellen laesst (`rawCompatible`, einheitliche Sektorzahl/-groesse, keine
+unformatierte Luecke).  Sonst bricht der Befehl mit Begruendung ab und die Datei bleibt
+unveraendert.  Kommentar, Bezeichnung, Etikett, Interleave/Skew eines geladenen Abbilds
+bleiben erhalten (auch bei `save-as x.cqm y.cqm`); ueber `.hfe` und zurueck gehen sie
+verloren (neuer Standardkopf).  Nicht moeglich: UDOS (Gap-Verkettung), CP/A-Disketten mit
+128-B-Systemspuren (gemischte Geometrie, z. B. `create … --fs cpa780`), FM-Disketten.
+
+```
+k1520disktool create neu.cqm --fs scpx640
+k1520disktool put neu.cqm PIP.COM
+k1520disktool save-as alt.hfe kopie.cqm      # und zurueck: save-as kopie.cqm neu.hfe
+```
+
 ## tar-Disketten und `tar-satz`
 
 84 der 142 P8000-Abbilder (`doc/design/33_cqm.md` §4a) tragen einen rohen `tar`-Strom ab
-Sektor 0 statt eines Dateisystems. Profil `tar720` (nur lesbar; `put`/`rm`/`attr`/`create`
+Sektor 0 statt eines Dateisystems. Profil `tar720` (nur lesbar, auch in einer `.cqm`; `put`/`rm`/`attr`/`create`
 melden das ausdrücklich), Erkennung zuletzt, nach CP/A-Regel und allen echten
 Dateisystemen. `ls -l`, `get`, `info`, `check` wie bei WEGA (UNIX-Spalten, `.fileinfo`
 mit `fs=tar`). Befunde: `tar.abgeschnitten` (Warnung; Teilstück bleibt lesbar),

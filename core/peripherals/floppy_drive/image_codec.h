@@ -12,7 +12,7 @@
  * | Img       | `.img` | nein            | **ja** (Geometrie + Sektorlayout) |
  * | Hfe       | `.hfe` | ja (Header/LUT) | nein |
  * | Dmk       | `.dmk` | ja (Header/IDAM-Tabelle) | nein |
- * | Cqm       | `.cqm` | ja (Kopf) — **nur lesbar** | nein |
+ * | Cqm       | `.cqm` | ja (Kopf) | nein (Geometrie aus dem Medium, wie `.img` nur fuer rawCompatible-Medien) |
  *
  * @see doc/design/09_floppy_drive.md §4
  * @author Olaf Krieger
@@ -33,7 +33,7 @@ enum class ContainerType : uint8_t {
     Img = 0,   ///< rohes Sektorimage (.img) — braucht ein DiskFormat
     Hfe,       ///< HxC Floppy Emulator v1 (.hfe) — Bitzellen, self-describing
     Dmk,       ///< David Keil's Disk Image (.dmk) — Spur-Bytes + IDAM-Tabelle
-    Cqm        ///< CopyQM (.cqm) — RLE-gepackte Sektoren, **nur lesbar** (save() scheitert)
+    Cqm        ///< CopyQM (.cqm) — RLE-gepackte Sektoren; schreibbar nur fuer rawCompatible-Medien einheitlicher Geometrie
 };
 
 /**
@@ -58,7 +58,7 @@ const char* name(ContainerType t);        ///< "img" | "hfe" | "dmk" | "cqm"
 const char* extension(ContainerType t);   ///< ".img" | ".hfe" | ".dmk" | ".cqm"
 bool selfDescribing(ContainerType t);     ///< Hfe/Dmk/Cqm = true
 bool needsDiskFormat(ContainerType t);    ///< nur Img = true
-bool writable(ContainerType t);           ///< Cqm = false (nur lesbar), sonst true
+bool writable(ContainerType t);           ///< alle Container sind schreibbar (Grenzen: save())
 
 /**
  * @brief Datei vollstaendig in @p out laden (Geometrie inklusive).

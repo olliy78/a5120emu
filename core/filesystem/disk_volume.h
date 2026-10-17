@@ -739,7 +739,7 @@ public:
     /// @brief Schreibgeschuetzt?  Vorgabe beim Oeffnen: **ja**.
     bool readOnly() const { return read_only_; }
 
-    /// @brief Ist der Schreibschutz UNAUFHEBBAR (nur gemessene Geometrie, `.cqm`,
+    /// @brief Ist der Schreibschutz UNAUFHEBBAR (nur gemessene Geometrie,
     ///        tar-Diskette)?
     bool readOnlyForced() const;
 
@@ -786,7 +786,7 @@ private:
     };
 
     bool fail(const std::string& why) const { last_error_ = why; return false; }
-    /// @brief Meldung fuer eine abgewiesene Schreibanforderung (tar/.cqm eigene Texte).
+    /// @brief Meldung fuer eine abgewiesene Schreibanforderung (tar eigener Text).
     std::string schreibschutzText() const;
     /// @brief Geometrie der Diskette, auch wenn kein Dateisystem gemountet ist; nullptr = unbekannt.
     const DiskFormat* rohFormat() const;

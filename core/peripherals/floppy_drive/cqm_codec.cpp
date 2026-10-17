@@ -1,6 +1,6 @@
 /**
  * @file cqm_codec.cpp
- * @brief Implementierung von CqmCodec (CopyQM-Abbild, nur Lesen).
+ * @brief Implementierung von CqmCodec (CopyQM-Abbild, Lesen und Schreiben).
  *
  * @see core/peripherals/floppy_drive/cqm_codec.h
  * @author Olaf Krieger
@@ -11,7 +11,9 @@
 #include "core/peripherals/floppy_drive/cqm_codec.h"
 #include "core/peripherals/floppy_drive/track_codec.h"
 
+#include <algorithm>
 #include <array>
+#include <filesystem>
 #include <fstream>
 #include <utility>
 
@@ -166,6 +168,8 @@ bool CqmCodec::decodeBuffer(const std::vector<uint8_t>& d, std::vector<uint8_t>&
         err = "CopyQM: Datei abgeschnitten (Kommentar reicht ueber das Dateiende)";
         return false;
     }
+    si.raw_header.assign(d.begin(), d.begin() + kHeaderSize);
+    si.comment_raw.assign(d.begin() + kHeaderSize, d.begin() + kHeaderSize + cmt);
     si.comment.assign(reinterpret_cast<const char*>(&d[kHeaderSize]), cmt);
     // Ein Kommentar ist meist NUL- oder ^Z-terminiert; nur den Text davor melden.
     while (!si.comment.empty() && (si.comment.back() == '\0' || si.comment.back() == 0x1A))
@@ -291,10 +295,256 @@ bool CqmCodec::load(const std::string& path, DiskMedium& out, SourceInfo* info,
     return true;
 }
 
-bool CqmCodec::save(const std::string& path, const DiskMedium&, std::string& err) {
-    err = "CopyQM-Abbilder (.cqm) koennen nur gelesen werden — bitte als .hfe, .dmk oder "
-          ".img speichern: " + path;
-    return false;
+// ─── Schreiben ───────────────────────────────────────────────────────────────
+
+std::vector<uint8_t> CqmCodec::packRle(const std::vector<uint8_t>& raw) {
+    // Ein Block traegt hoechstens 32767 (int16, positiv); eine Wiederholung kostet 3 Byte,
+    // ein unterbrochenes Literal zusaetzlich 2 fuer den Kopf der Fortsetzung — ab 5
+    // gleichen Bytes lohnt die Wiederholung in jedem Fall.
+    constexpr size_t kMaxBlock = 32767;
+    constexpr size_t kMinRun   = 5;
+    std::vector<uint8_t> out;
+    auto put16 = [&](int16_t n) {
+        const uint16_t u = static_cast<uint16_t>(n);
+        out.push_back(static_cast<uint8_t>(u));
+        out.push_back(static_cast<uint8_t>(u >> 8));
+    };
+    size_t lit = 0;   // Beginn des noch nicht ausgegebenen Literals
+    auto flushLit = [&](size_t end) {
+        while (lit < end) {
+            const size_t n = std::min(end - lit, kMaxBlock);
+            put16(static_cast<int16_t>(n));
+            out.insert(out.end(), raw.begin() + static_cast<std::ptrdiff_t>(lit),
+                       raw.begin() + static_cast<std::ptrdiff_t>(lit + n));
+            lit += n;
+        }
+    };
+    size_t i = 0;
+    while (i < raw.size()) {
+        size_t j = i + 1;
+        while (j < raw.size() && raw[j] == raw[i]) ++j;
+        if (j - i >= kMinRun) {
+            flushLit(i);
+            for (size_t rest = j - i; rest > 0;) {
+                const size_t n = std::min(rest, kMaxBlock);
+                put16(static_cast<int16_t>(-static_cast<int>(n)));
+                out.push_back(raw[i]);
+                rest -= n;
+            }
+            lit = j;
+        }
+        i = j;
+    }
+    flushLit(raw.size());
+    return out;
+}
+
+namespace {
+
+/// Geometrie und Sektorstrom eines Mediums (Ergebnis von sektorStrom()).
+struct Strom {
+    uint16_t size = 0, spt = 0, heads = 0;
+    uint8_t  used = 0, total = 0, base = 1;
+    std::vector<uint8_t> raw;
+};
+
+std::string spurName(unsigned c, unsigned h) {
+    return std::to_string(c) + "/" + std::to_string(h);
+}
+
+/// @brief Medium → entpackter Sektorstrom; false mit Begruendung, wenn nicht darstellbar.
+bool sektorStrom(const DiskMedium& in, Strom& st, std::string& err) {
+    const std::string grund = in.rawIncompatibleReason();
+    if (!grund.empty()) {
+        err = "Diskette laesst sich nicht als .cqm speichern (" + grund
+              + ") — Gap-Anhaenge/unformatierte Spuren gehen dabei verloren. "
+                "Bitte .hfe oder .dmk waehlen.";
+        return false;
+    }
+    const unsigned ncyls = in.numCylinders(), nheads = in.numHeads();
+    // Zylinder bis einschliesslich des letzten beschriebenen werden gespeichert; was
+    // dahinter unformatiert ist, bleibt "nicht gespeichert" (der Leser fuellt 0xF6).
+    int last = -1;
+    bool seite1 = false;
+    for (unsigned c = 0; c < ncyls; ++c)
+        for (unsigned h = 0; h < nheads; ++h)
+            if (!in.peek(static_cast<uint8_t>(c), static_cast<uint8_t>(h)).empty()) {
+                last = static_cast<int>(c);
+                if (h == 1) seite1 = true;
+            }
+    if (last < 0) { err = "CopyQM: Diskette ist unformatiert"; return false; }
+    const unsigned heads = (nheads >= 2 && seite1) ? 2 : 1;
+    st.used  = static_cast<uint8_t>(last + 1);
+    st.total = static_cast<uint8_t>(ncyls);
+    st.heads = static_cast<uint16_t>(heads);
+
+    bool erste = true;
+    for (unsigned c = 0; c < st.used; ++c)
+        for (unsigned h = 0; h < heads; ++h) {
+            const TrackImage& t = in.peek(static_cast<uint8_t>(c), static_cast<uint8_t>(h));
+            if (t.empty()) {
+                err = "CopyQM: Spur " + spurName(c, h) + " ist unformatiert, davor/dahinter "
+                      "liegen aber beschriebene Spuren (ungleichmaessige Geometrie)";
+                return false;
+            }
+            if (t.encoding != Encoding::MFM || t.cell_factor != 1) {
+                err = "CopyQM kennt nur MFM mit voller Datenrate (Spur " + spurName(c, h)
+                      + " ist FM oder halbe Rate)";
+                return false;
+            }
+            auto secs = TrackCodec::parseTrack(t);
+            std::sort(secs.begin(), secs.end(),
+                      [](const LogicalSector& a, const LogicalSector& b) { return a.id < b.id; });
+            if (secs.empty()) { err = "CopyQM: Spur " + spurName(c, h) + " ohne Sektoren"; return false; }
+            const uint16_t sz = secs.front().size;
+            for (size_t i = 0; i < secs.size(); ++i) {
+                if (secs[i].size != sz || secs[i].data.size() != sz) {
+                    err = "CopyQM: Spur " + spurName(c, h) + " mischt Sektorgroessen";
+                    return false;
+                }
+                if (i && secs[i].id != secs[i - 1].id + 1) {
+                    err = "CopyQM: Sektor-IDs der Spur " + spurName(c, h) + " sind nicht lueckenlos";
+                    return false;
+                }
+            }
+            if (erste) {
+                st.size = sz;
+                st.spt  = static_cast<uint16_t>(secs.size());
+                st.base = secs.front().id;
+                erste   = false;
+                if (!(sz == 128 || sz == 256 || sz == 512 || sz == 1024 || sz == 2048 || sz == 4096)) {
+                    err = "CopyQM: Sektorgroesse " + std::to_string(sz) + " nicht darstellbar";
+                    return false;
+                }
+                if (st.spt > 64 || st.base < 1 || st.base + st.spt - 1 > 255) {
+                    err = "CopyQM: Sektorzahl/-IDs nicht darstellbar (" + std::to_string(st.spt)
+                          + " Sektoren ab ID " + std::to_string(st.base) + ")";
+                    return false;
+                }
+            } else if (sz != st.size || secs.size() != st.spt || secs.front().id != st.base) {
+                err = "CopyQM: Spur " + spurName(c, h) + " weicht von der Geometrie der ersten "
+                      "Spur ab (Sektorgroesse/-zahl/-IDs muessen einheitlich sein)";
+                return false;
+            }
+            for (const LogicalSector& s : secs)
+                st.raw.insert(st.raw.end(), s.data.begin(), s.data.end());
+        }
+    return true;
+}
+
+void setU16(std::vector<uint8_t>& f, size_t o, uint32_t x) {
+    f[o] = static_cast<uint8_t>(x);
+    f[o + 1] = static_cast<uint8_t>(x >> 8);
+}
+
+}  // namespace
+
+bool CqmCodec::encode(const DiskMedium& in, const SourceInfo* vorlage,
+                      std::vector<uint8_t>& out, SourceInfo* geschrieben, std::string& err) {
+    Strom st;
+    if (!sektorStrom(in, st, err)) return false;
+
+    // Vorlage nur, wenn sie wirklich die Kopfbytes der Quelle traegt.
+    const bool hatKopf = vorlage && vorlage->raw_header.size() == kHeaderSize;
+    // Bezeichnung/Dichte/Interleave & Co. gehoeren zu EINER Geometrie; aendert sie sich
+    // (Medium gewachsen/verkleinert), gelten nur noch Kommentar und Etikett.
+    const bool gleich = hatKopf && vorlage->sector_size == st.size
+                     && vorlage->secs_per_track == st.spt && vorlage->heads == st.heads
+                     && vorlage->used_cyls == st.used && vorlage->total_cyls == st.total
+                     && vorlage->first_sector_id == st.base;
+
+    std::vector<uint8_t> f(kHeaderSize, 0);
+    if (gleich) {
+        f = vorlage->raw_header;
+    } else {
+        f[0] = 'C'; f[1] = 'Q'; f[2] = 0x14;
+        const unsigned kb = static_cast<unsigned>(
+            static_cast<size_t>(st.total) * st.heads * st.spt * st.size / 1024);
+        const std::string bez = std::to_string(kb) + "K "
+                              + (st.heads == 1 ? "Single-Sided" : "Double-Sided");
+        std::copy(bez.begin(), bez.end(), f.begin() + kOffDescr);
+        f[kOffBlind]   = 1;   // wie alle Abbilder der Sammlung: rohe Sektorkopie
+        f[kOffDensity] = (st.size == 512 && st.spt >= 30) ? 2 : (st.size == 512 && st.spt >= 15) ? 1 : 0;
+        f[kOffInterlv] = 1;
+        const char* nolabel = "** NONE ** ";
+        std::copy(nolabel, nolabel + kLabelLen, f.begin() + kOffLabel);
+        if (hatKopf) {   // Etikett der Quelle uebernehmen
+            std::copy(vorlage->raw_header.begin() + kOffLabel,
+                      vorlage->raw_header.begin() + kOffLabel + kLabelLen, f.begin() + kOffLabel);
+        }
+    }
+    setU16(f, kOffSecSize, st.size);
+    setU16(f, kOffSpt, st.spt);
+    setU16(f, kOffHeads, st.heads);
+    f[kOffUsedCyl] = st.used;
+    f[kOffTotCyl]  = st.total;
+    f[kOffSecBase] = static_cast<uint8_t>(st.base - 1);
+    const uint32_t c = crc(st.raw.data(), st.raw.size());
+    for (int i = 0; i < 4; ++i) f[kOffCrc + i] = static_cast<uint8_t>(c >> (8 * i));
+
+    std::vector<uint8_t> kommentar;
+    if (hatKopf) kommentar = vorlage->comment_raw;
+    else { const std::string k = "Image file created by k1520emu"; kommentar.assign(k.begin(), k.end()); }
+    if (kommentar.size() > 0xFFFF) kommentar.resize(0xFFFF);
+    setU16(f, kOffCmtLen, static_cast<uint32_t>(kommentar.size()));
+
+    uint8_t summe = 0;
+    for (size_t i = 0; i < kHeaderSize - 1; ++i) summe = static_cast<uint8_t>(summe + f[i]);
+    f[kHeaderSize - 1] = static_cast<uint8_t>(-summe);
+
+    out = std::move(f);
+    out.insert(out.end(), kommentar.begin(), kommentar.end());
+    const std::vector<uint8_t> strom = packRle(st.raw);
+    out.insert(out.end(), strom.begin(), strom.end());
+
+    // Gegenprobe: was wir geschrieben haben, muss der Leser unveraendert zurueckgeben.
+    SourceInfo si;
+    std::vector<uint8_t> raw2;
+    std::string e2;
+    if (!decodeBuffer(out, raw2, &si, e2) || raw2 != st.raw) {
+        err = "CopyQM: interner Fehler beim Kodieren (Gegenprobe fehlgeschlagen" +
+              (e2.empty() ? std::string() : ": " + e2) + ")";
+        return false;
+    }
+    if (geschrieben) *geschrieben = std::move(si);
+    return true;
+}
+
+bool CqmCodec::save(const std::string& path, const DiskMedium& in, const SourceInfo* vorlage,
+                    SourceInfo* geschrieben, std::string& err) {
+    std::vector<uint8_t> datei;
+    if (!encode(in, vorlage, datei, geschrieben, err)) return false;   // Zieldatei unberuehrt
+
+    // Erst in eine Nachbardatei, dann umbenennen: bei vollem Datentraeger oder Abbruch
+    // bleibt die alte Datei ganz, es entsteht nie ein halb geschriebenes Abbild.
+    const std::string tmp = path + ".k1520tmp";
+    {
+        std::ofstream f(tmp, std::ios::binary | std::ios::trunc);
+        if (!f) { err = "Kann Datei nicht schreiben: " + tmp; return false; }
+        f.write(reinterpret_cast<const char*>(datei.data()),
+                static_cast<std::streamsize>(datei.size()));
+        f.flush();
+        if (!f) {
+            f.close();
+            std::error_code ec;
+            std::filesystem::remove(tmp, ec);
+            err = "Schreibfehler (unvollstaendig): " + path;
+            return false;
+        }
+    }
+    std::error_code ec;
+    std::filesystem::rename(tmp, path, ec);
+    if (ec) {
+        std::error_code ec2;
+        std::filesystem::remove(tmp, ec2);
+        err = "Kann Datei nicht ersetzen: " + path + " (" + ec.message() + ")";
+        return false;
+    }
+    return true;
+}
+
+bool CqmCodec::save(const std::string& path, const DiskMedium& in, std::string& err) {
+    return save(path, in, nullptr, nullptr, err);
 }
 
 std::string CqmCodec::infoField(const SourceInfo& c, const std::string& k) {

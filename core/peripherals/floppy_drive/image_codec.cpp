@@ -70,7 +70,7 @@ const char* ImageCodec::extension(ContainerType t) {
 
 bool ImageCodec::selfDescribing(ContainerType t) { return t != ContainerType::Img; }
 bool ImageCodec::needsDiskFormat(ContainerType t) { return t == ContainerType::Img; }
-bool ImageCodec::writable(ContainerType t) { return t != ContainerType::Cqm; }
+bool ImageCodec::writable(ContainerType) { return true; }
 
 bool ImageCodec::load(const std::string& path, ContainerType type,
                       const DiskFormat* fmt, DiskMedium& out, std::string& err) {

@@ -71,9 +71,7 @@ public:
 
     bool isMounted()      const { return image_ != nullptr; }
     bool isWriteProtect() const { return write_protect_; }
-    void setWriteProtect(bool wp);   ///< ein .cqm bleibt schreibgeschuetzt (readOnlyForced)
-    /// @brief true bei einem .cqm: nur lesbar, der Schreibschutz laesst sich nicht aufheben.
-    bool readOnlyForced() const { return image_ && image_->container() == ContainerType::Cqm; }
+    void setWriteProtect(bool wp);
     const char* lastError() const { return last_error_.c_str(); }
     void setLastError(std::string msg) { last_error_ = std::move(msg); }
 
@@ -169,4 +167,7 @@ private:
     bool                     side0_only_ = false;
     std::vector<std::string> notices_;
     mutable int              last_lost_write_ = -1;  ///< (pos<<1|head) der letzten Warnung
+
+    /// Haelt den Hinweis "Abbild nicht speicherbar: …" in notices_ aktuell.
+    void meldeSpeicherfehler();
 };

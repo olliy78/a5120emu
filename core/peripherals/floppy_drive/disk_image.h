@@ -67,9 +67,9 @@ public:
      *
      * Der Container wird per @ref ImageCodec::detect bestimmt (HFE-Signatur, CQM-Kopf,
      * DMK-Header, sonst `.img`).  @p fmt ist **nur** fuer `.img` noetig — `.hfe`/`.dmk`/
-     * `.cqm` sind self-describing.  Ein `.cqm` ist **nur lesbar**: die Bindung ist nie
-     * beschreibbar (@ref bindingWritable), der Autosave schweigt; `saveAs` in einen
-     * anderen Container geht.
+     * `.cqm` sind self-describing.  Ein `.cqm` ist wie ein `.img` beschreibbar, soweit das
+     * Medium sich als Sektorstrom darstellen laesst (@ref rawCompatible, einheitliche
+     * Geometrie); sonst bleibt die Datei unveraendert (@ref saveFailed).
      *
      * @return DiskImage oder nullptr bei Fehler (Datei/Format/Signatur).
      */
@@ -212,7 +212,20 @@ public:
 
     const char* lastError() const { return last_error_.c_str(); }
 
+    /// @brief Scheiterte das letzte Zurueckschreiben (z. B. Medium nicht als .cqm/.img
+    ///        darstellbar)?  Die Datei ist dann unveraendert, die Maschine laeuft weiter;
+    ///        der Grund steht in @ref lastError.  Wird vom naechsten erfolgreichen
+    ///        flush()/saveAs() zurueckgesetzt.
+    bool saveFailed() const { return save_failed_; }
+
 private:
+    /// Medium in @p ziel schreiben; bei .cqm mit den Kopfdaten der Quelle als Vorlage,
+    /// die der neuen Datei kommen nach @p info_neu.
+    bool speichere(const std::string& path, ContainerType ziel, const DiskFormat* fmt,
+                   std::optional<CqmCodec::SourceInfo>* info_neu, std::string& err) const;
+    bool exportImpl(const std::string& path, std::optional<DiskFormat> fmt,
+                    std::optional<CqmCodec::SourceInfo>* info_neu);
+
     DiskMedium    medium_;
     /// Physische Bindung (nullptr = Datei/Speicher).  `shared_ptr`, weil die C-ABI dem
     /// Arbeitsfaden ein eigenes Handle darauf gibt, das die Diskette ueberleben darf.
@@ -224,6 +237,8 @@ private:
     bool          binding_writable_ = true;
     std::optional<CqmCodec::SourceInfo> cqm_info_;    ///< nur bei geladenem .cqm
     std::string   last_error_;
+    bool          save_failed_     = false;   ///< letztes flush() scheiterte
+    uint64_t      failed_revision_ = 0;       ///< … bei dieser Medium-Revision
 
     /// Maschinentakt der zuletzt BEOBACHTETEN Spuraenderung (0 = sauber) …
     uint64_t      dirty_since_        = 0;

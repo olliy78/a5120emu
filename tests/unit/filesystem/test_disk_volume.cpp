@@ -910,6 +910,52 @@ TEST(DiskVolume, NeuAngelegteDisketteIstBeschreibbar) {
 // Speichern unter / Exportieren
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// @test CopyQM ist wie .img beschreibbar: create(.cqm) → put → flush → neu oeffnen;
+///       Schreibschutz ist frei setzbar (kein Zwang); save-as .hfe → .cqm verlustfrei
+TEST(DiskVolume, CopyQmAnlegenSchreibenUndNeuLaden) {
+    const std::string pfad = k1520test::tempPath("k1520_test_dv_cqm.cqm");
+    fs::remove(pfad);
+    TempOrdner q("k1520_test_dv_cqm_q");
+    schreibe(q / "HALLO.TXT", std::string(3000, 'x') + "ende");
+    std::string err;
+    {
+        auto dv = DiskVolume::create(pfad, "scpx640", "", formate(), dateisysteme(), err);
+        ASSERT_NE(dv, nullptr) << err;
+        EXPECT_EQ(dv->containerName(), "cqm");
+        EXPECT_FALSE(dv->readOnly());
+        EXPECT_FALSE(dv->readOnlyForced());
+        ASSERT_TRUE(dv->insertAll(q.path(), TransferOptions{})) << dv->lastError();
+        ASSERT_TRUE(dv->flush()) << dv->lastError();
+    }
+    {
+        auto dv = oeffne(pfad, "", err);
+        ASSERT_NE(dv, nullptr) << err;
+        EXPECT_EQ(dv->containerName(), "cqm");
+        EXPECT_TRUE(dv->readOnly());           // Vorgabe beim Oeffnen: geschuetzt …
+        EXPECT_FALSE(dv->readOnlyForced());    // … aber frei aufhebbar
+        dv->setReadOnly(false);
+        EXPECT_FALSE(dv->readOnly()) << dv->lastError();
+        ASSERT_NE(dv->cqmInfo(), nullptr);
+        bool gefunden = false;
+        for (const auto& e : dv->list()) gefunden |= (e.name.find("HALLO") != std::string::npos);
+        EXPECT_TRUE(gefunden);
+
+        // save-as in .hfe und zurueck in .cqm: gleiche Dateiliste
+        const std::string hfe = k1520test::tempPath("k1520_test_dv_cqm.hfe");
+        const std::string cqm2 = k1520test::tempPath("k1520_test_dv_cqm2.cqm");
+        ASSERT_TRUE(dv->exportImage(hfe)) << dv->lastError();
+        auto h = oeffne(hfe, "", err);
+        ASSERT_NE(h, nullptr) << err;
+        ASSERT_TRUE(h->exportImage(cqm2)) << h->lastError();
+        auto c2 = oeffne(cqm2, "", err);
+        ASSERT_NE(c2, nullptr) << err;
+        EXPECT_EQ(c2->list().size(), dv->list().size());
+        h.reset(); c2.reset();
+        fs::remove(hfe); fs::remove(cqm2);
+    }
+    fs::remove(pfad);
+}
+
 TEST(DiskVolume, ExportSchreibtEineKopieOhneUmzubinden) {
     std::string err;
     auto dv = oeffne(fixture("cpa_cpa780_k5601_clock.hfe"), "cpa780", err);

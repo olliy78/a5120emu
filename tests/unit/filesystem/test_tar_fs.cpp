@@ -506,36 +506,31 @@ std::vector<uint8_t> baueCqm(const std::vector<uint8_t>& raw, const std::string&
 
 }  // namespace
 
-/// @test Erzwungener Schreibschutz eines .cqm (Luecke aus dem CQM-Bericht): auch mit
-///       read_only=false geoeffnet bleibt es schreibgeschuetzt und unaufhebbar.
-TEST(CqmDiskVolume, SchreibschutzIstErzwungen) {
+/// @test Ein .cqm erzwingt keinen Schreibschutz mehr (nur die tar-Diskette darin ist
+///       nur lesbar); eine leere .cqm laesst sich schreibbar oeffnen.
+TEST(CqmDiskVolume, SchreibschutzKommtVomTarProfilNichtVomContainer) {
     const std::string p = k1520test::tempPath("k1520_test_cqmvol.cqm");
     schreibeDatei(p, baueCqm(aufDisk(beispiel()), "Kommentar"));
     auto v = oeffne(p, /*schreibend=*/true);
     ASSERT_TRUE(v);
     ASSERT_TRUE(v->hasFileSystem());
     EXPECT_EQ(v->detection().filesystem, "tar720");
-    EXPECT_TRUE(v->readOnly());
-    EXPECT_TRUE(v->readOnlyForced());
+    EXPECT_TRUE(v->readOnlyForced());          // tar: unaufhebbar
     EXPECT_EQ(v->containerName(), "cqm");
     v->setReadOnly(false);
     EXPECT_TRUE(v->readOnly());
-    EXPECT_FALSE(v->lastError().empty());
+    EXPECT_NE(v->lastError().find("tar"), std::string::npos);
     ASSERT_NE(v->cqmInfo(), nullptr);
     EXPECT_EQ(v->cqmInfo()->comment, "Kommentar");
-    EXPECT_FALSE(v->flush() && v->dirty());
     fs::remove(p);
 
-    // auch ein .cqm mit anderem Inhalt (leere Diskette): nicht aufhebbar
+    // .cqm mit anderem Inhalt (leere Diskette): kein Zwang, Schreibschutz aufhebbar
     const std::string q = k1520test::tempPath("k1520_test_cqmvol2.cqm");
     schreibeDatei(q, baueCqm(std::vector<uint8_t>(kDisk, 0xE5)));
     auto w = oeffne(q, true);
     ASSERT_TRUE(w);
-    EXPECT_TRUE(w->readOnly());
-    EXPECT_TRUE(w->readOnlyForced());
-    w->setReadOnly(false);
-    EXPECT_TRUE(w->readOnly());
-    EXPECT_NE(w->lastError().find("nur lesbar"), std::string::npos);
+    EXPECT_FALSE(w->readOnlyForced());
+    EXPECT_FALSE(w->readOnly());
     fs::remove(q);
 }
 
