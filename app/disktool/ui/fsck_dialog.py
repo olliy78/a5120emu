@@ -34,6 +34,8 @@ neu aufgebaut.
 
 from __future__ import annotations
 
+from app.disktool.ui.schreibsperre import sperrgrund
+
 from typing import List, Tuple
 
 from PySide6.QtCore import Qt
@@ -301,7 +303,8 @@ class FsckDialog(QDialog):
         if schreibgeschuetzt:
             self.hinweis.setText(
                 "🔒 Die Diskette ist schreibgeschützt — Reparieren ist nicht möglich. "
-                "Der Schreibschutz lässt sich im Hauptfenster aufheben.")
+                + (sperrgrund(self.tool)
+                   or "Der Schreibschutz lässt sich im Hauptfenster aufheben."))
         elif not gewaehlt:
             self.hinweis.setText("")
         else:

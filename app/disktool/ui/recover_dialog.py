@@ -37,6 +37,8 @@ Sechs Festlegungen tragen diesen Dialog:
 
 from __future__ import annotations
 
+from app.disktool.ui.schreibsperre import sperrgrund
+
 from pathlib import Path
 
 from PySide6.QtCore import Qt
@@ -362,7 +364,8 @@ class RecoverDialog(QDialog):
         elif schreibgeschuetzt:
             self.hinweis.setText(
                 "🔒 Die Diskette ist schreibgeschützt — auf ihr eintragen geht nicht. "
-                "Retten geht: das ist der übliche Weg.")
+                "Retten geht: das ist der übliche Weg."
+                + (" " + sperrgrund(self.tool) if sperrgrund(self.tool) else ""))
         elif not f.restorable:
             self.hinweis.setText("Auf der Diskette eintragen geht hier nicht: "
                                  + (f.blocked_why or "kein Grund genannt"))

@@ -296,3 +296,15 @@ bool CqmCodec::save(const std::string& path, const DiskMedium&, std::string& err
           ".img speichern: " + path;
     return false;
 }
+
+std::string CqmCodec::infoField(const SourceInfo& c, const std::string& k) {
+    if (k == "description") return c.description;
+    if (k == "label")       return c.label;
+    if (k == "comment")     return c.comment;
+    if (k == "interleave")  return std::to_string(c.interleave);
+    if (k == "skew")        return std::to_string(c.skew);
+    if (k == "cylinders")   return std::to_string(c.used_cyls) + "/" + std::to_string(c.total_cyls);
+    if (k == "crc")         return !c.crc_checked ? "nicht geprueft"
+                                   : c.crc_stored == c.crc_computed ? "ok" : "falsch";
+    return "";
+}

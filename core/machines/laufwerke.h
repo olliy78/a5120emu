@@ -47,6 +47,7 @@ public:
     std::string diskPath(int drive) const;
     std::string diskContainer(int drive) const;
     std::string diskNotice(int drive) const;
+    std::string diskContainerInfo(int drive, const std::string& key) const;
     DiskGeometry diskGeometry(int drive) const;
     bool isDiskFormatted(int drive) const;
     std::string detectedFormatName(int drive) const;

@@ -255,6 +255,10 @@ _lib.k1520_disk_raw_compatible.restype = ctypes.c_bool
 _lib.k1520_disk_path.argtypes = [K1520Handle, ctypes.c_int]
 _lib.k1520_disk_path.restype = ctypes.c_char_p
 
+# k1520_disk_container_info(K1520Handle, drive: int, key: const char*) -> const char*
+_lib.k1520_disk_container_info.argtypes = [K1520Handle, ctypes.c_int, ctypes.c_char_p]
+_lib.k1520_disk_container_info.restype = ctypes.c_char_p
+
 # k1520_disk_container(K1520Handle, drive: int) -> const char*
 _lib.k1520_disk_container.argtypes = [K1520Handle, ctypes.c_int]
 _lib.k1520_disk_container.restype = ctypes.c_char_p
@@ -1987,6 +1991,13 @@ class K1520Emulator:
     def disk_container(self, drive: int) -> str:
         """Container of the bound file ("img" | "hfe" | "dmk"; "" = none)."""
         c = _lib.k1520_disk_container(self._handle, ctypes.c_int(drive))
+        return c.decode('utf-8', 'replace') if c else ""
+
+    def disk_container_info(self, drive: int, key: str) -> str:
+        """Metadaten des Containers (nur ``.cqm``): description, label, comment,
+        interleave, skew, cylinders, crc; sonst leer."""
+        c = _lib.k1520_disk_container_info(self._handle, ctypes.c_int(drive),
+                                           key.encode())
         return c.decode('utf-8', 'replace') if c else ""
 
     def detected_format(self, drive: int) -> str:

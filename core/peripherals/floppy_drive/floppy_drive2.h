@@ -71,7 +71,9 @@ public:
 
     bool isMounted()      const { return image_ != nullptr; }
     bool isWriteProtect() const { return write_protect_; }
-    void setWriteProtect(bool wp);
+    void setWriteProtect(bool wp);   ///< ein .cqm bleibt schreibgeschuetzt (readOnlyForced)
+    /// @brief true bei einem .cqm: nur lesbar, der Schreibschutz laesst sich nicht aufheben.
+    bool readOnlyForced() const { return image_ && image_->container() == ContainerType::Cqm; }
     const char* lastError() const { return last_error_.c_str(); }
     void setLastError(std::string msg) { last_error_ = std::move(msg); }
 

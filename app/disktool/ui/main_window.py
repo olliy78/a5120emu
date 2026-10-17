@@ -55,6 +55,8 @@ from app.disktool.ui.actions import erzeuge_aktionen
 from app.disktool.ui.disk_editor import DiskEditorWindow
 from app.disktool.ui.disk_header import DiskHeader, auswahlliste
 from app.disktool.ui.disk_info_dialog import DiskInfoDialog
+from app.disktool.ui.schreibsperre import dateisystem_anzeige, schutz_text, sperrgrund
+from app.disktool.ui.tar_satz_dialog import TarSatzDialog
 from app.disktool.ui.fileinfo_dialog import FileinfoDialog, schreibe_fileinfo
 from app.disktool.ui.fsck_dialog import FsckDialog
 from app.disktool.ui.recover_dialog import RecoverDialog
@@ -219,6 +221,7 @@ class MainWindow(QMainWindow):
         m.addAction(self.act_oeffnen)
         self.menue_zuletzt = m.addMenu("&Zuletzt geöffnet")
         m.addAction(self.act_neu)
+        m.addAction(self.act_tar_satz)
         m.addSeparator()
         m.addAction(self.act_speichern)
         m.addAction(self.act_speichern_unter)
@@ -629,6 +632,17 @@ class MainWindow(QMainWindow):
         # zu bekommen; nur waehrend des Schreibens ist das Laufwerk belegt.
         self.act_physisch.setEnabled(not laeuft)
 
+        # Unaufhebbar gesperrt (.cqm, tar): die Schreibbefehle bleiben zu, und der
+        # Tooltip sagt WARUM — sonst sucht man den Schreibschutz, den es nicht gibt.
+        grund = sperrgrund(self.tool)
+        if grund:
+            self.act_schreibschutz.setEnabled(False)
+        tipps = self.__dict__.setdefault("_tipps_ohne_sperre", {})
+        for a in (self.act_speichern, self.act_schreiben, self.act_loeschen,
+                  self.act_alles_rein, self.act_neu_beschreiben, self.act_schreibschutz):
+            tipps.setdefault(a, a.toolTip())
+            a.setToolTip(f"{tipps[a]}\n\nGesperrt: {grund}" if grund else tipps[a])
+
         self._schutz_anzeigen()
 
     def _schutz_anzeigen(self) -> None:
@@ -647,10 +661,12 @@ class MainWindow(QMainWindow):
         if self.tool is None:
             self.st_schloss.clear()
             self.st_schutz.setText("")
+            self.st_schutz.setToolTip("")
         else:
             self.st_schloss.setPixmap(icon(bild).pixmap(16, 16))
-            self.st_schutz.setText("R/W  schreibbar" if schreibbar
-                                   else "R/O  nur lesen")
+            self.st_schutz.setText(schutz_text(self.tool) or (
+                "R/W  schreibbar" if schreibbar else "R/O  nur lesen"))
+            self.st_schutz.setToolTip(sperrgrund(self.tool))
 
     #: Alter Name — das Freigeben haengt nicht mehr an einem Argument.
     def _enable_write(self, offen: bool = True) -> None:
@@ -838,6 +854,10 @@ class MainWindow(QMainWindow):
         Erste, was im Kopf stehen muss (sonst bliebe die Zeile leer).
         """
         if self._physisch is None:
+            satz = getattr(self, "_satz", None)
+            if satz and self.tool is not None:
+                return (f"tar-Satz aus {len(satz)} Abbildern: "
+                        + ", ".join(Path(s).name for s in satz))
             return ""
         art = "schreibend" if self.tool is not None and not self.tool.read_only \
             else "nur lesen"
@@ -916,7 +936,10 @@ class MainWindow(QMainWindow):
 
         for f in bericht.findings:
             wo = f"c{f.cyl}h{f.head} " if f.ortbar else ""
-            self.log_dock.append(f"Befund {f.schwere}: {wo}{f.object} — {f.text}"
+            # tar-Befunde verweisen auf den Kommandozeilenweg; im Fenster heisst er
+            # „Datei ▸ tar-Satz oeffnen…".
+            text = f.text.replace("tar-satz", "Datei ▸ tar-Satz öffnen…")
+            self.log_dock.append(f"Befund {f.schwere}: {wo}{f.object} — {text}"
                                  f"  [{f.id}]")
 
         schwerster = max(bericht.findings, key=lambda f: f.severity)
@@ -931,7 +954,7 @@ class MainWindow(QMainWindow):
     # Diskette oeffnen / anlegen / schliessen
     # ════════════════════════════════════════════════════════════════════════
 
-    def open_image(self, path, filesystem: str = "") -> bool:
+    def open_image(self, path, filesystem: str = "", *, satz=None) -> bool:
         """Abbild öffnen — **roh, wenn nichts erkannt wird** (§12.6).
 
         Eine gemischte oder unbekannte Geometrie ist kein Grund, das Abbild gar
@@ -941,8 +964,14 @@ class MainWindow(QMainWindow):
         dieselbe ist.
         """
         self._close_tool()
+        # Ein tar-Satz sind mehrere Abbilder, die EIN Strom sind (`satz` in Lesereihenfolge);
+        # `path` ist dann das erste.
+        self._satz = list(satz) if satz else None
         try:
-            self.tool = DiskTool.open_raw(path, filesystem or None)
+            if satz:
+                self.tool = DiskTool.open_tar_satz(satz)
+            else:
+                self.tool = DiskTool.open_raw(path, filesystem or None)
         except (K1520DiskError, FileNotFoundError) as e:
             self.tool = None
             self.disk_view.clear()
@@ -964,10 +993,12 @@ class MainWindow(QMainWindow):
         self._medium_meldungen()
         if not self.tool.has_filesystem:
             self._roh_melden()
-        self._zuletzt_merken(str(path))
-        self.log_dock.append(f"Geöffnet: {path} — {self.tool.filesystem}")
+        if not satz:
+            self._zuletzt_merken(str(path))
+        anzeige = dateisystem_anzeige(self.tool)
+        self.log_dock.append(f"Geöffnet: {path} — {anzeige}")
         self.statusBar().showMessage(
-            f"Geöffnet: {Path(path).name} — {self.tool.filesystem}", STATUS_DAUER)
+            f"Geöffnet: {Path(path).name} — {anzeige}", STATUS_DAUER)
         return True
 
     def open_physical(self, *, filesystem: str = "", **optionen) -> bool:
@@ -1557,6 +1588,7 @@ class MainWindow(QMainWindow):
         if self.tool is not None:
             self.tool.close()
             self.tool = None
+        self._satz = None
         # Der Befund gehoert zur geschlossenen Diskette und darf nicht stehenbleiben.
         if hasattr(self, "st_befund"):
             self.st_befund.hide()
@@ -1798,6 +1830,10 @@ class MainWindow(QMainWindow):
         """
         if self.tool is None:
             return False
+        if str(path).lower().endswith(".cqm"):
+            self._fehler("Speichern unter", "CopyQM-Abbilder (.cqm) lassen sich nur lesen, "
+                         "nicht schreiben — bitte .hfe, .dmk oder .img wählen.")
+            return False
         try:
             self.tool.save_as(path)
         except K1520DiskError as e:
@@ -1905,9 +1941,27 @@ class MainWindow(QMainWindow):
             return
         pfad, _ = QFileDialog.getOpenFileName(
             self, "Diskettenabbild öffnen", self._disketten_ordner(),
-            "Diskettenabbilder (*.hfe *.dmk *.img);;Alle Dateien (*)")
+            self.OEFFNEN_FILTER)
         if pfad:
             self.open_image(pfad)
+
+    #: Dateifilter „Abbild oeffnen": .cqm (CopyQM) nur lesbar, nie Ziel von Neu/Speichern unter.
+    OEFFNEN_FILTER = "Diskettenabbilder (*.hfe *.dmk *.img *.cqm);;Alle Dateien (*)"
+
+    def _tar_satz_dialog(self) -> None:
+        """Mehrere Abbilder in gewählter Reihenfolge als einen tar-Strom öffnen."""
+        if not self._darf_verwerfen():
+            return
+        pfade, _ = QFileDialog.getOpenFileNames(
+            self, "Abbilder des tar-Satzes wählen", self._disketten_ordner(),
+            self.OEFFNEN_FILTER)
+        if not pfade:
+            return
+        dlg = TarSatzDialog(pfade, self)
+        if dlg.exec() != QDialog.Accepted:
+            return
+        geordnet = dlg.pfade()
+        self.open_image(geordnet[0], satz=geordnet)
 
     def _neu_dialog(self) -> None:
         if not self._darf_verwerfen():
@@ -1920,6 +1974,10 @@ class MainWindow(QMainWindow):
             self, "Neue Diskette anlegen", self._disketten_ordner(),
             "HFE-Abbild (*.hfe);;DMK-Abbild (*.dmk);;Sektorabbild (*.img)")
         if not pfad:
+            return
+        if pfad.lower().endswith(".cqm"):
+            self._fehler("Neue Diskette", "CopyQM-Abbilder (.cqm) sind nur lesbar — eine "
+                         "neue Diskette lässt sich nur als .hfe, .dmk oder .img anlegen.")
             return
 
         # Bootfaehig? — nur, wo es Systemspuren gibt (eine Datendiskette wie cpa800

@@ -138,6 +138,26 @@ extern "C" K1520Disk k1520d_open_raw(const char* path, const char* fs_name,
     return h.release();
 }
 
+extern "C" K1520Disk k1520d_open_tar_satz(const char* paths) {
+    g_open_error.clear();
+    std::vector<std::string> liste;
+    std::string rest = paths ? paths : "";
+    size_t a = 0;
+    while (a <= rest.size()) {
+        size_t b = rest.find('\n', a);
+        if (b == std::string::npos) b = rest.size();
+        if (b > a) liste.push_back(rest.substr(a, b - a));
+        a = b + 1;
+    }
+    if (liste.empty()) { g_open_error = "kein Pfad angegeben"; return nullptr; }
+
+    auto h = std::make_unique<Handle>();
+    std::string err;
+    h->vol = DiskVolume::openTarSatz(liste, kataloge().formate, kataloge().dateisysteme, err);
+    if (!h->vol) { g_open_error = err; return nullptr; }
+    return h.release();
+}
+
 extern "C" int k1520d_write_to_physical(K1520Disk h, K1520Sync sync) {
     if (!h) return -1;
     Handle* p = H(h);
@@ -269,6 +289,10 @@ extern "C" bool k1520d_read_only(K1520Disk h) {
     return h ? H(h)->vol->readOnly() : true;
 }
 
+extern "C" bool k1520d_read_only_forced(K1520Disk h) {
+    return h ? H(h)->vol->readOnlyForced() : true;
+}
+
 extern "C" void k1520d_set_read_only(K1520Disk h, bool ro) {
     if (h) H(h)->vol->setReadOnly(ro);
 }
@@ -363,14 +387,7 @@ extern "C" const char* k1520d_container_info(K1520Disk h, const char* key) {
     if (k == "type") {
         w = v.containerName();
     } else if (const CqmCodec::SourceInfo* c = v.cqmInfo()) {
-        if      (k == "description") w = c->description;
-        else if (k == "label")       w = c->label;
-        else if (k == "comment")     w = c->comment;
-        else if (k == "interleave")  w = std::to_string(c->interleave);
-        else if (k == "skew")        w = std::to_string(c->skew);
-        else if (k == "cylinders")   w = std::to_string(c->used_cyls) + "/" + std::to_string(c->total_cyls);
-        else if (k == "crc")         w = !c->crc_checked ? "nicht geprueft"
-                                       : c->crc_stored == c->crc_computed ? "ok" : "falsch";
+        w = CqmCodec::infoField(*c, k);
     }
     return halte(H(h)->s_container, std::move(w));
 }

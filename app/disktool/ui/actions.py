@@ -25,9 +25,13 @@ from app.disktool.ui.icons import icon
 _SPEC: List[Tuple] = [
     # ── Datei ───────────────────────────────────────────────────────────────
     ("oeffnen", "Abbild &öffnen…", "open", "Ctrl+O",
-     "Ein Diskettenabbild öffnen (.hfe, .dmk, .img)", "_oeffnen_dialog", False),
+     "Ein Diskettenabbild öffnen (.hfe, .dmk, .img, .cqm)", "_oeffnen_dialog", False),
     ("neu", "&Neue Diskette…", "disk-new", "Ctrl+N",
      "Eine Diskette anlegen — wahlweise bootfähig", "_neu_dialog", False),
+    # Bewusst OHNE Tastenkuerzel (die Kuerzeltabelle des Handbuchs ist ein Vertrag).
+    ("tar_satz", "tar-&Satz öffnen…", None, None,
+     "Mehrere Abbilder (.cqm/.img/…) in wählbarer Reihenfolge als EINEN tar-Strom öffnen "
+     "(ein tar-Archiv, das auf mehrere Disketten verteilt ist)", "_tar_satz_dialog", False),
     ("speichern", "&Speichern", "save", "Ctrl+S",
      "Die Änderungen in die Abbilddatei schreiben", "save", False),
     ("speichern_unter", "Speichern &unter…", "save-as", "Ctrl+Shift+S",
@@ -167,6 +171,7 @@ _SPEC: List[Tuple] = [
 #: Beschriftung in der Symbolleiste (``QAction.setIconText``).
 KURZ = {'oeffnen': 'Öffnen',
     'neu': 'Neu',
+    'tar_satz': 'tar-Satz',
     'physisch': 'Diskette laden',
     'physisch_schreiben': 'Diskette schreiben',
     'neu_beschreiben': 'Neu schreiben',

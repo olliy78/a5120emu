@@ -38,3 +38,11 @@ Voller Befund an 142 Abbildern: `doc/design/33_cqm.md`.
 10. **84 Abbilder sind rohe tar-Ströme** (kein Dateisystem), erkannt als `tar720`
    (`doc/merkposten/disktool.md`).  Offen: `.cqm` in den GUI-Dateidialogen, nicht
    gespeicherte Zylinder nur synthetisch geprueft.
+11. **Oberflaechen (2026-10-17).**  Emulator: `FloppyDriveV2::mount` erzwingt bei `.cqm` den
+   Schreibschutz (`setWriteProtect(false)` wirkungslos, Hinweis `notices`), `k1520_disk_container_info`
+   (Metadaten wie `k1520d_container_info`); Laufwerkskasten: Haken fest, Kommentar als Tooltip,
+   `.cqm` nie Ziel von Neu/Speichern unter.  DiskTool: `k1520d_read_only_forced`,
+   `k1520d_open_tar_satz`, `app/disktool/ui/schreibsperre.py` (Grund an EINER Stelle),
+   Aktion „tar-Satz öffnen…" (kein Kuerzel).  Archiv: Abbild bleibt `.hfe`; `.cqm`-Quelle als
+   `source_container` (Metadaten + sha256 der Quelldatei).  Testhilfe `tests/python/cqm_bau.py`,
+   Waechter `py_cqm_emulator_gui`, `py_cqm_disktool_gui`.  Kein Drag&Drop zum Oeffnen vorhanden.

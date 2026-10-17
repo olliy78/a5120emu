@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.core_binding.k1520disk import filesystems
+from app.disktool.ui.schreibsperre import dateisystem_anzeige
 from app.disktool.ui.icons import icon
 
 
@@ -89,6 +90,7 @@ class DiskHeader(QFrame):
 
     def leeren(self, pfad: str = "") -> None:
         self.pfad.setText(pfad or "Keine Diskette geöffnet")
+        self.pfad.setToolTip("")
         self.angaben.setText("Öffnen Sie ein Abbild oder legen Sie eine neue "
                              "Diskette an.")
 
@@ -100,9 +102,19 @@ class DiskHeader(QFrame):
         muss.
         """
         self.pfad.setText(name or tool.path)
+        # CopyQM: der Kommentar des Abbilds (Herkunft, Stand …) steht am Dateinamen.
+        info = tool.container_info()
+        tipp = ""
+        if info.get("type") == "cqm":
+            tipp = "CopyQM-Abbild (nur lesbar)"
+            if info.get("description"):
+                tipp += f"\nBezeichnung: {info['description']}"
+            if info.get("comment", "").strip():
+                tipp += "\n\nKommentar:\n" + info["comment"].strip()
+        self.pfad.setToolTip(tipp)
         erkannt = "erkannt" if tool.unambiguous else "erkannt, nicht eindeutig"
         teile = [f"Format: {tool.format}",
-                 f"Dateisystem: {tool.filesystem} ({erkannt})"]
+                 f"Dateisystem: {dateisystem_anzeige(tool)} ({erkannt})"]
         if tool.volume_count > 1:
             teile.append(f"{tool.volume_count} Seiten")
         self.angaben.setText("   ·   ".join(teile))

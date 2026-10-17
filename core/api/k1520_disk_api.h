@@ -67,6 +67,13 @@ K1520_API K1520Disk k1520d_open_raw(const char* path, const char* fs_name,
                                     bool read_only);
 
 /**
+ * @brief Mehrere Abbilder als EINEN tar-Strom oeffnen (Mehrdisketten-tar-Satz).
+ * @param paths  Pfade in Lesereihenfolge, durch '\n' getrennt.  Das Ergebnis ist immer
+ *               schreibgeschuetzt.  nullptr + @ref k1520d_last_open_error bei Fehler.
+ */
+K1520_API K1520Disk k1520d_open_tar_satz(const char* paths);
+
+/**
  * @brief **Physische Diskette** in einem echten Laufwerk oeffnen.
  *
  * @p sync kommt aus @ref k1520s_create und wird von einem fremden Arbeitsfaden bedient.
@@ -224,6 +231,8 @@ K1520_API bool k1520d_export_image(K1520Disk h, const char* path);
 /// @brief Schreibschutz abfragen bzw. setzen (Vorgabe beim Oeffnen: geschuetzt).
 K1520_API bool k1520d_read_only(K1520Disk h);
 K1520_API void k1520d_set_read_only(K1520Disk h, bool ro);
+/// @brief Ist der Schreibschutz UNAUFHEBBAR (.cqm, tar-Diskette, nur gemessene Geometrie)?
+K1520_API bool k1520d_read_only_forced(K1520Disk h);
 /// @brief Sicherungskopie beim ersten Schreiben an-/abschalten (Vorgabe: an).
 K1520_API void k1520d_set_backup(K1520Disk h, bool on);
 /// @brief Handle schliessen (schreibt NICHT selbsttaetig — vorher @ref k1520d_flush).

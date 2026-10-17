@@ -254,6 +254,21 @@ def _cpm_angaben(eintraege) -> list:
     return z
 
 
+#: Beschriftete Zeilen der CopyQM-Metadaten im Inhaltsverzeichnis.
+_CQM_ZEILEN = (("description", "Bezeichnung"), ("label", "Etikett"),
+               ("interleave", "Interleave"), ("skew", "Skew"),
+               ("cylinders", "Zylinder"), ("crc", "Pruefwert"))
+
+
+def _cqm_angaben(tool: "DiskTool") -> dict:
+    """Die Container-Angaben eines `.cqm` ({} bei jedem anderen Container)."""
+    try:
+        info = tool.container_info()
+    except Exception:
+        return {}
+    return info if info.get("type") == "cqm" else {}
+
+
 def inhaltsverzeichnis(tool: "DiskTool", quelle: str = "",
                        bezeichnung: str = "", herkunft: str = "") -> str:
     """Das Inhaltsverzeichnis als Text — Kopf, Tabelle, Legende.
@@ -289,6 +304,12 @@ def inhaltsverzeichnis(tool: "DiskTool", quelle: str = "",
     datei = Path(quelle or tool.path).name
     if datei:
         z.append(f"Abbild        {datei}")
+    cqm = _cqm_angaben(tool)
+    if cqm:
+        z.append("Container     CopyQM (.cqm, nur lesbar) — im Archiv als .hfe abgelegt")
+        for schluessel, name in _CQM_ZEILEN:
+            if cqm.get(schluessel):
+                z.append(f"{name:<13} {cqm[schluessel]}")
     if herkunft:
         z.append(f"Herkunft      {herkunft}")
     elif not datei:
@@ -300,6 +321,8 @@ def inhaltsverzeichnis(tool: "DiskTool", quelle: str = "",
         z.append(f"              auch moeglich: {', '.join(tool.alternatives)}")
     if tool.remarks:
         z.append(f"Medium        {tool.remarks}")
+    if cqm and cqm.get("comment", "").strip():
+        z.append("Kommentar     " + cqm["comment"].strip().replace("\n", "\n              "))
     z.append(f"Archiviert    {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}")
     z.append("")
 
@@ -383,6 +406,8 @@ INVENTAR_KOPF = """\
 #   image         das verlustfreie .hfe-Abbild; sein sha256 kennzeichnet die
 #                 DISKETTE als Ganzes (zwei gleiche Abbilder = dieselbe Diskette).
 #   catalogue     das menschenlesbare Inhaltsverzeichnis.
+#   source_container  nur bei einer .cqm-Quelle: ihre Metadaten (type, description, label,
+#                 comment, interleave, skew, cylinders, crc) und sha256 der Quelldatei.
 #   files_root    Ordner im Archiv, unter dem die Dateien liegen.
 #   files         eine Zeile je Datei der Diskette:
 #     path        Pfad IM ARCHIV (Eintrag der .zip), Trenner '/', stets relativ.
@@ -443,7 +468,8 @@ def _erwartete_namen(eintraege) -> dict:
 def inventar(eintraege, dateien_ordner: Path, *, abbild: Path, abbild_name: str,
              verzeichnis_name: str, verzeichnis_text: str,
              bezeichnung: str = "", quelle: str = "", herkunft: str = "",
-             text_mode: bool = False) -> dict:
+             text_mode: bool = False, container=None,
+             quelle_pfad: str = "") -> dict:
     """Das maschinenlesbare Verzeichnis als Datenstruktur.
 
     Gerechnet wird über die Dateien, wie sie **im Archiv landen** — nicht über
@@ -483,7 +509,7 @@ def inventar(eintraege, dateien_ordner: Path, *, abbild: Path, abbild_name: str,
             eintrag["damaged"] = True
         dateien.append(eintrag)
 
-    return {
+    daten = {
         "diskarchive": INVENTAR_VERSION,
         "generator": _erzeuger(),
         "created": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
@@ -499,6 +525,14 @@ def inventar(eintraege, dateien_ordner: Path, *, abbild: Path, abbild_name: str,
         "files": dateien,
         "attachments": beiblaetter,
     }
+    if container:
+        # Additiv (diskarchive bleibt 1): das .cqm selbst steht nicht im Archiv (dort
+        # liegt die verlustfreie .hfe-Fassung), wohl aber seine Herkunft: Metadaten
+        # samt Kommentar und die Pruefsumme der Quelldatei.
+        daten["source_container"] = dict(container)
+        if quelle_pfad and Path(quelle_pfad).is_file():
+            daten["source_container"]["sha256"] = _sha256(Path(quelle_pfad))
+    return daten
 
 
 def _erzeuger() -> str:
@@ -568,7 +602,8 @@ def create_archive(tool: "DiskTool", zip_path, text_mode: bool = False,
                          abbild_name=abbild.name,
                          verzeichnis_name=f"{stamm}.txt", verzeichnis_text=text,
                          bezeichnung=bezeichnung, quelle=tool.path,
-                         herkunft=herkunft, text_mode=text_mode)
+                         herkunft=herkunft, text_mode=text_mode,
+                         container=_cqm_angaben(tool), quelle_pfad=tool.path)
 
         # 4) Alles einpacken.
         ziel.parent.mkdir(parents=True, exist_ok=True)

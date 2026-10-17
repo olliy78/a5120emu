@@ -330,6 +330,12 @@ K1520_API const char* k1520_disk_path(K1520Handle h, int drive);
 /** @brief Container of the bound file ("img" | "hfe" | "dmk" | "cqm"; "" = none). */
 K1520_API const char* k1520_disk_container(K1520Handle h, int drive);
 /**
+ * @brief Container metadata of the bound file (.cqm only; "" otherwise).
+ * @param key "type" | "description" | "label" | "comment" | "interleave" | "skew" |
+ *            "cylinders" | "crc" (as k1520d_container_info of the DiskTool)
+ */
+K1520_API const char* k1520_disk_container_info(K1520Handle h, int drive, const char* key);
+/**
  * @brief Catalog format DETECTED on the mounted disk ("" = unknown).
  *
  * The geometry detection of the k1520DiskTool (`GeometryProbe`), run over the medium

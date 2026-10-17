@@ -27,8 +27,8 @@ Zum Dateiaustausch mit den Disketten gibt es das Schwesterprogramm
    Beim allerersten Start ist noch keine eingelegt; dann bleibt der Bildschirm
    nach dem Boot-ROM stehen.
 2. **Diskette einlegen** — *Datei ▸ Diskette einlegen ▸ Laufwerk A:* oder der
-   Knopf *Mount* im Kasten „Laufwerke". Angenommen werden `.hfe`, `.dmk`
-   und `.img`.
+   Knopf *Mount* im Kasten „Laufwerke". Angenommen werden `.hfe`, `.dmk`,
+   `.img` und `.cqm` (CopyQM, nur lesbar).
 3. **Kaltstart.** Eine frisch eingelegte Diskette bootet nicht von selbst — der
    Rechner sieht sie erst beim nächsten Start: *Maschine ▸ Rückstellen*
    (Strg+Umschalt+R).
@@ -186,6 +186,20 @@ ein Sektorabbild nicht darstellen kann (eine unformatierte Spur, oder Daten
 hinter der Datenprüfsumme — dort legt UDOS seine Verkettung ab), und wenn das
 Format **unbekannt** ist. Im zweiten Fall wäre die Sektorreihenfolge des Abbilds
 geraten, und ein geratenes Abbild sieht heil aus und ist es nicht.
+
+## CopyQM-Abbilder
+
+Ein `.cqm` (Abbild des Programms CopyQM) lässt sich einlegen wie jedes andere
+Abbild, ist aber **nur lesbar**: der Haken *Write-Protect* ist gesetzt und lässt
+sich nicht abwählen, die Statuszeile zeigt `R/O`, und im Laufwerkskasten steht
+der Hinweis „CopyQM-Abbild: nur lesbar". Die Geometrie steht in der Datei, ein
+Formatdialog erscheint deshalb nicht. Bezeichnung, Etikett, Interleave, Prüfwert
+und der **Kommentar** des Abbilds stehen als Tooltip am Abbildnamen.
+
+Soll das Gastsystem auf die Diskette schreiben, wandelt *Speichern unter…* sie in
+ein `.hfe`, `.dmk` oder `.img` um; ab dann arbeitet der Kasten mit der Kopie. Ein
+`.cqm` ist als Ziel nie wählbar — weder bei *Speichern unter…* noch bei
+*Leere Diskette*.
 
 ## Laufwerke bestücken
 

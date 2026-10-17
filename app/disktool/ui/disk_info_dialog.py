@@ -8,6 +8,7 @@ und die Belegung je Seite stehen hier — nachschlagbar, statt den Kopf zu füll
 
 from __future__ import annotations
 
+from app.disktool.ui.schreibsperre import dateisystem_anzeige, sperrgrund
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
@@ -20,7 +21,7 @@ def angaben_text(tool) -> str:
     zeilen = [
         f"Datei:            {tool.path}",
         f"Format:           {tool.format}",
-        f"Dateisystem:      {tool.filesystem} ({tool.filesystem_type or 'unbekannt'})",
+        f"Dateisystem:      {dateisystem_anzeige(tool)} ({tool.filesystem_type or 'unbekannt'})",
         f"Erkennung:        {'eindeutig' if tool.unambiguous else 'nicht eindeutig'}",
     ]
     if tool.alternatives:
@@ -31,6 +32,10 @@ def angaben_text(tool) -> str:
         f"Schreibschutz:    {'ja' if tool.read_only else 'nein'}",
         f"Ungespeichert:    {'ja' if tool.dirty else 'nein'}",
     ]
+    grund = sperrgrund(tool)
+    if grund:
+        zeilen.append(f"Nur lesbar:       {grund}")
+    zeilen += container_zeilen(tool)
     if tool.remarks:
         zeilen.append(f"Auffälligkeiten:  {tool.remarks}")
 
@@ -50,6 +55,28 @@ def angaben_text(tool) -> str:
     zeilen.append("")
     zeilen += befund_zeilen(tool)
     return "\n".join(zeilen)
+
+
+_CQM_FELDER = (("description", "Bezeichnung"), ("label", "Etikett"),
+               ("interleave", "Interleave"), ("skew", "Skew"),
+               ("cylinders", "Zylinder"), ("crc", "Prüfwert"))
+
+
+def container_zeilen(tool) -> list:
+    """Angaben zum Container der Datei — nur bei ``.cqm`` gibt es welche (Kopf,
+    Prüfwert und der Kommentar des Abbilds)."""
+    info = tool.container_info()
+    if info.get("type") != "cqm":
+        return []
+    zeilen = ["Container:        CopyQM (.cqm), nur lesbar"]
+    for schluessel, name in _CQM_FELDER:
+        if info.get(schluessel):
+            zeilen.append(f"{name + ':':<18}{info[schluessel]}")
+    kommentar = info.get("comment", "").strip()
+    if kommentar:
+        zeilen.append("Kommentar:")
+        zeilen += [f"  {z}" for z in kommentar.splitlines()]
+    return zeilen
 
 
 def befund_zeilen(tool) -> list:

@@ -106,6 +106,9 @@ bool FloppyDriveV2::mount(std::unique_ptr<DiskImage> img, bool write_protect) {
         return false;
     }
 
+    // Ein .cqm laesst sich nie zurueckschreiben: Schreibschutz erzwingen, sonst gingen
+    // Gastschreibzugriffe still verloren (der Autosave scheiterte).
+    if (img->container() == ContainerType::Cqm) write_protect = true;
     image_ = std::move(img);
     image_->setWriteProtect(write_protect);
     write_protect_   = write_protect;
@@ -120,6 +123,8 @@ bool FloppyDriveV2::mount(std::unique_ptr<DiskImage> img, bool write_protect) {
     if (pitch_ == TrackPitch::HalfStep)
         notices_.emplace_back("Laufwerk liest nur jede zweite Spur");
     if (side0_only_) notices_.emplace_back("Nur Seite 0 verwendbar");
+    if (image_->container() == ContainerType::Cqm)
+        notices_.emplace_back("CopyQM-Abbild: nur lesbar, Schreibschutz fest");
     for (const auto& n : notices_)
         LOG_INFO("Floppy", "Laufwerk '%s' (%d Spuren, %d Koepfe) + Diskette (%d/%d): %s",
                  profile_.name.c_str(), profile_.num_cyls, profile_.num_heads,
@@ -147,6 +152,7 @@ std::string FloppyDriveV2::noticeText() const {
 }
 
 void FloppyDriveV2::setWriteProtect(bool wp) {
+    if (!wp && readOnlyForced()) return;
     write_protect_ = wp;
     if (image_) image_->setWriteProtect(wp);
 }

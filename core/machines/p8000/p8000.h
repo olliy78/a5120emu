@@ -198,6 +198,7 @@ public:
     std::string diskPath(int d) const override      { return lw().diskPath(d); }
     std::string diskContainer(int d) const override { return lw().diskContainer(d); }
     std::string diskNotice(int d) const override    { return lw().diskNotice(d); }
+    std::string diskContainerInfo(int d, const std::string& k) const override { return lw().diskContainerInfo(d, k); }
     std::string detectedFormatName(int d) const override { return lw().detectedFormatName(d); }
     std::string defaultFormatName(int d) const override  { return lw().defaultFormatName(d); }
     std::vector<std::string> compatibleFormats(int d) const override { return lw().compatibleFormats(d); }

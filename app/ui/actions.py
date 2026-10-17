@@ -39,7 +39,7 @@ _SPEC: List[Tuple] = [
     # „welches?" unbeantwortbar, und ein Dialog, der sie stellt, waere ein
     # Umweg um ein Menue herum.
     ("einlegen", "Diskette &einlegen", "open", None,
-     "Ein Diskettenabbild (.hfe, .dmk, .img) in eines der Laufwerke einlegen",
+     "Ein Diskettenabbild (.hfe, .dmk, .img, .cqm) in eines der Laufwerke einlegen",
      None, False),
     ("auswerfen", "Diskette aus&werfen", "eject", None,
      "Die eingelegte Diskette aus einem Laufwerk nehmen", None, False),

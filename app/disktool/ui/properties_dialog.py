@@ -28,6 +28,8 @@ Der Dialog ist ohne Diskette benutzbar (headless prüfbar): er bekommt einen
 
 from __future__ import annotations
 
+from app.disktool.ui.schreibsperre import sperrgrund
+
 import datetime
 from typing import TYPE_CHECKING, Optional
 
@@ -149,10 +151,12 @@ class PropertiesDialog(QDialog):
         self.hinweis.setWordWrap(True)
         self.hinweis.setStyleSheet("color: #a06000;")
         if tool.read_only:
+            grund = sperrgrund(tool)
             self.hinweis.setText(
                 "Die Diskette ist schreibgeschützt geöffnet — die Felder lassen sich "
-                "ansehen, aber nicht ändern.  Zum Ändern den Haken „Nur lesen“ "
-                "entfernen.")
+                "ansehen, aber nicht ändern."
+                + (f"  {grund}" if grund else
+                   "  Zum Ändern den Haken „Nur lesen“ entfernen."))
         lay.addWidget(self.hinweis)
 
         self.knoepfe = QDialogButtonBox(

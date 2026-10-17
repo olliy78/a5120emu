@@ -196,6 +196,7 @@ public:
 
     /// @brief Containerformat der gebundenen Datei ("img" | "hfe" | "dmk" | "cqm"; "" = keine).
     std::string diskContainer(int drive) const override;
+    std::string diskContainerInfo(int d, const std::string& k) const override { return lw_.diskContainerInfo(d, k); }
 
     /**
      * @brief Bedienhinweise zur eingelegten Diskette ("" = sie passt ohne Einschraenkung).

@@ -958,7 +958,7 @@ class MainWindow(QMainWindow):
             if einlegen:
                 text = f"Laufwerk &{chr(ord('A') + drive)}:"
                 tipp = (f"{name} liegt schon darin — erst auswerfen" if belegt
-                        else "Ein Abbild (.hfe, .dmk, .img) in dieses Laufwerk legen")
+                        else "Ein Abbild (.hfe, .dmk, .img, .cqm) in dieses Laufwerk legen")
             else:
                 text = (f"Laufwerk &{chr(ord('A') + drive)}:  ({name})" if name
                         else f"Laufwerk &{chr(ord('A') + drive)}:")

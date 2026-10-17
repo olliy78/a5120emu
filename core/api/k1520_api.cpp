@@ -706,6 +706,12 @@ const char* k1520_disk_detected_format(K1520Handle h, int drive) {
     return buf.c_str();
 }
 
+const char* k1520_disk_container_info(K1520Handle h, int drive, const char* key) {
+    static thread_local std::string buf;
+    buf = key ? toMachine(h)->diskContainerInfo(drive, key) : std::string();
+    return buf.c_str();
+}
+
 const char* k1520_disk_notice(K1520Handle h, int drive) {
     static thread_local std::string buf;
     buf = toMachine(h)->diskNotice(drive);

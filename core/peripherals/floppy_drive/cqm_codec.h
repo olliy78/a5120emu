@@ -111,6 +111,10 @@ bool loadBuffer(const std::vector<uint8_t>& datei, DiskMedium& out, SourceInfo* 
 bool decodeBuffer(const std::vector<uint8_t>& datei, std::vector<uint8_t>& raw,
                   SourceInfo* info, std::string& err);
 
+/// @brief Ein Feld der Metadaten als Text (description, label, comment, interleave, skew,
+///        cylinders, crc); unbekannter Schluessel = "".  Gemeinsam fuer DiskTool und Emulator.
+std::string infoField(const SourceInfo& si, const std::string& key);
+
 /// @brief Schreiben wird nicht unterstuetzt — liefert immer false mit Erklaerung.
 bool save(const std::string& path, const DiskMedium& in, std::string& err);
 

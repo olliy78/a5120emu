@@ -6,7 +6,7 @@ Dieses Werkzeug holt Dateien von Disketten der K1520-Rechner (A5120, A5130, PC 1
 auf den heutigen Rechner und schreibt sie zurück. Es liest und schreibt die
 Dateisysteme von **CP/A**, **SCPX**, **UDOS/ZDOS**, **UDOS1715/NDOS** und
 **SCP1700** (CP/M-86 des A7100) in den
-Abbildformaten `.hfe`, `.dmk` und `.img`.
+Abbildformaten `.hfe`, `.dmk` und `.img`; CopyQM-Abbilder (`.cqm`) liest es nur.
 
 Es gibt dasselbe auch als Kommandozeilenwerkzeug (`k1520disktool`); beide benutzen
 dieselbe Bibliothek und kommen deshalb immer zum selben Ergebnis.
@@ -46,7 +46,7 @@ nicht dort, wo das Programm installiert ist:
 
 | Ordner | Wofür |
 |--------|-------|
-| `K1520emu/Disketten` | die Abbilder (`.hfe`, `.dmk`, `.img`) |
+| `K1520emu/Disketten` | die Abbilder (`.hfe`, `.dmk`, `.img`, `.cqm`) |
 | `K1520emu/Dateien` | was von den Disketten geholt und auf sie geschrieben wird |
 
 Dort gehen die Dateidialoge auf, und die rechte Hälfte zeigt beim Start den
@@ -151,6 +151,30 @@ das `.fileinfo` trägt `teilstueck=ist/soll`), und Diskette 2…n beginnt mitten
 Datei (`tar.fortsetzung`, das Anfangsstück liegt als `_fortsetzung_anfang.bin` bei).
 Vollständig werden die Dateien mit `k1520disktool tar-satz abbild1 abbild2 … --to ordner`
 (Reihenfolge wie in den Namen, `ariane1`, `ariane2`).
+
+Im Fenster heißt der Weg **Datei ▸ tar-Satz öffnen…** (ohne Tastenkürzel): man wählt
+alle Abbilder des Satzes (`.cqm` oder `.img`), ordnet sie in der Liste mit *Auf* und *Ab*
+— der Vorschlag sortiert nach den Zahlen in den Dateinamen, `ariane2` vor `ariane10` — und
+bekommt EINE Diskette mit den vollständigen Dateien. Ein tar-Satz ist wie jede tar-Diskette
+nur lesbar. Das Dateisystem heißt in der Anzeige „tar-Archiv (UNIX)“; die Befunde
+`tar.fortsetzung` (die Diskette beginnt mitten in einer Datei) und `tar.abgeschnitten`
+(die letzte Datei setzt sich auf der nächsten Diskette fort) stehen im Protokoll.
+
+## CopyQM-Abbilder
+
+Viele Abbilder alter Rechner liegen als `.cqm` (Programm CopyQM). Das Werkzeug **liest** sie
+wie jedes andere Abbild — Öffnen, Dateien holen, Prüfen, Archivieren, Diskeditor —, aber es
+**schreibt nie** in eine `.cqm`: die Statuszeile zeigt „schreibgeschützt (CopyQM)“, der
+Schreibschutz lässt sich nicht aufheben, und *Speichern*, *Löschen*, *Auf die Diskette
+schreiben*, *Alles einfügen* sowie das Reparieren und Ändern von Dateiangaben sind gesperrt
+(der Tooltip der Schaltfläche nennt den Grund). *Speichern unter…* wandelt in `.hfe`, `.dmk`
+oder `.img` um; ein `.cqm` ist nie ein Ziel, auch nicht bei *Neue Diskette*.
+
+Bezeichnung, Etikett, Interleave, Prüfwert und der **Kommentar** des Abbilds stehen unter
+*Diskettenangaben…*; der Kommentar außerdem als Tooltip am Dateinamen. Beim Archivieren
+liegt das Abbild als `.hfe` im Archiv (wie bei jeder Quelle); das Inhaltsverzeichnis nennt
+die `.cqm` als Quelle samt Kommentar, das maschinenlesbare Verzeichnis führt unter
+`source_container` die Angaben und die Prüfsumme der `.cqm`-Datei.
 
 ## UDOS1715 — dasselbe UDOS, anderes Dateisystem
 

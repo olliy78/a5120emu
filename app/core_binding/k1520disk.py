@@ -66,6 +66,8 @@ _lib.k1520d_open.argtypes = [_CS, _CS, ctypes.c_bool]
 _lib.k1520d_open.restype = _H
 _lib.k1520d_open_raw.argtypes = [_CS, _CS, ctypes.c_bool]
 _lib.k1520d_open_raw.restype = _H
+_lib.k1520d_open_tar_satz.argtypes = [_CS]
+_lib.k1520d_open_tar_satz.restype = _H
 # Physische Diskette am Greaseweazle (doc/design/14_physische_diskette.md)
 _lib.k1520d_open_physical.argtypes = [ctypes.c_void_p, _CS, ctypes.c_bool]
 _lib.k1520d_open_physical.restype = _H
@@ -101,6 +103,8 @@ _lib.k1520d_read_only.argtypes = [_H]
 _lib.k1520d_read_only.restype = ctypes.c_bool
 _lib.k1520d_set_read_only.argtypes = [_H, ctypes.c_bool]
 _lib.k1520d_set_read_only.restype = None
+_lib.k1520d_read_only_forced.argtypes = [_H]
+_lib.k1520d_read_only_forced.restype = ctypes.c_bool
 _lib.k1520d_set_backup.argtypes = [_H, ctypes.c_bool]
 _lib.k1520d_set_backup.restype = None
 _lib.k1520d_close.argtypes = [_H]
@@ -1025,6 +1029,16 @@ class DiskTool:
         if not h:
             raise K1520DiskError(_s(_lib.k1520d_last_open_error()))
         return cls(h, "")
+
+    @classmethod
+    def open_tar_satz(cls, paths) -> "DiskTool":
+        """Mehrere Abbilder (``.cqm``/``.img``…) als EINEN tar-Strom öffnen — in der
+        gegebenen Reihenfolge.  Immer schreibgeschützt; ``path`` ist das erste Abbild."""
+        liste = [os.fspath(p) for p in paths]
+        h = _lib.k1520d_open_tar_satz(_b("\n".join(liste)))
+        if not h:
+            raise K1520DiskError(_s(_lib.k1520d_last_open_error()))
+        return cls(h, liste[0] if liste else "")
 
     @classmethod
     def open_raw(cls, path, filesystem: Optional[str] = None,
@@ -1967,6 +1981,16 @@ class DiskTool:
     def read_only(self) -> bool:
         """Schreibgeschützt?  Vorgabe beim Öffnen: ja."""
         return bool(_lib.k1520d_read_only(self._h))
+
+    @property
+    def read_only_forced(self) -> bool:
+        """Schreibschutz unaufhebbar (``.cqm``, tar-Diskette, nur gemessene Geometrie)?"""
+        return bool(_lib.k1520d_read_only_forced(self._h))
+
+    @property
+    def ist_cqm(self) -> bool:
+        """Quelle ist ein CopyQM-Abbild (``.cqm``, nur lesbar)."""
+        return self.container_info().get("type") == "cqm"
 
     def set_read_only(self, ro: bool) -> None:
         _lib.k1520d_set_read_only(self._h, ro)
