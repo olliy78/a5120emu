@@ -7,6 +7,11 @@ auf den heutigen Rechner und schreibt sie zurück. Es liest und schreibt die
 Dateisysteme von **CP/A**, **SCPX**, **UDOS/ZDOS**, **UDOS1715/NDOS** und
 **SCP1700** (CP/M-86 des A7100) in den
 Abbildformaten `.hfe`, `.dmk` und `.img`; CopyQM-Abbilder (`.cqm`) liest es nur.
+Dazu kommen die UNIX-Disketten des P8000: **WEGA** (mit Modus, Besitzer und Zeit je
+Datei) und **tar-Disketten** ohne Dateisystem, beide ohne UDOS-Angaben. Alles
+Wesentliche zu den neueren Funktionen steht in den Abschnitten *tar-Disketten*,
+*CopyQM-Abbilder*, *Was eine Datei außer ihren Bytes hat* und *Archivieren*
+(einschließlich *Archive auf der Kommandozeile*).
 
 Es gibt dasselbe auch als Kommandozeilenwerkzeug (`k1520disktool`); beide benutzen
 dieselbe Bibliothek und kommen deshalb immer zum selben Ergebnis.
@@ -711,16 +716,90 @@ for archiv in Path("archive").glob("*.zip"):
             fassungen[f["name"].upper()].add((f["sha256"], archiv.name))
 ```
 
-**Auf der Kommandozeile** — für eine ganze Sammlung, Diskette für Diskette:
+### Archive auf der Kommandozeile
+
+Das C++-Werkzeug `k1520disktool` hat keinen eigenen `archive`-Befehl für Abbilddateien.
+Archive entstehen auf zwei Wegen, beide mit demselben Ergebnis wie *Datei ▸ Archivieren*:
 
 ```sh
+# 1. eine Abbilddatei (.hfe .dmk .img .cqm)
 python3 -m app.disktool.archive abbild.hfe archiv.zip "CP/A Arbeit 7"
+
+# 2. die Diskette im echten Laufwerk (Greaseweazle)
 k1520disktool --physical archive archiv.zip --label "UDOS 4.3 Nr. 7"
 ```
 
-Der zweite Weg archiviert die Diskette im **echten Laufwerk**; `--label` ist dort
-der Aufkleber (ohne ihn gilt der Datenträgername). Ein vorhandenes Archiv wird
-nicht überschrieben — dafür braucht es `--force`.
+Der erste Weg läuft im Quellbaum bzw. mit dem Python der Installation. Beim zweiten ist
+`--label` der Aufkleber (ohne ihn gilt der Datenträgername). **Ein vorhandenes Archiv wird
+nicht überschrieben** — Ausgang 2, es sei denn, man gibt `--force` an.
+
+**Schalter von `python3 -m app.disktool.archive`:**
+
+| Schalter | Wirkung |
+|----------|---------|
+| `abbild archiv.zip [beschriftung]` | Quelle, Ziel, optional der Aufkleber als dritter Wert |
+| `--bezeichnung TEXT` | dasselbe wie die Beschriftung; benennt die Dateien im Archiv |
+| `--ohne-abbild` | kein `.hfe` ins Archiv, nur Dateien und Verzeichnisse |
+| `--text` | Zeilenenden umsetzen (Textauszug) |
+| `--force` | vorhandenes Archiv ersetzen |
+| `--herkunft-datei DATEI` | YAML- oder JSON-Datei mit Herkunftsangaben → `provenance:` |
+| `--herkunft SCHLUESSEL=WERT` | einzelne Angabe, mehrfach möglich, überschreibt die Datei; `hinweise=…` hängt eine Zeile an |
+| `--beilage DATEI[=NAME]` | Beschreibungsdatei an die Wurzel der `.zip`, mehrfach möglich |
+| `--beilage-kodierung K` | Kodierung der Beilagen; Vorgabe `auto` (UTF-8, sonst Latin-1) |
+
+**Herkunft und Beschreibung — ein vollständiges Beispiel.** Die Datei `meta.yaml`:
+
+```yaml
+source_url: http://www.pofo.de/P8000/arch/
+set_name: Ariane
+version: "2.0"
+web_label: ARIANE I 20.12.89
+note: Von der Webseite geladen, CQM-Abbild unverändert.
+```
+
+```sh
+python3 -m app.disktool.archive ariane1.cqm ariane1.zip "ARIANE I" \
+    --herkunft-datei meta.yaml \
+    --herkunft version=2.0b \
+    --beilage ReadMe.txt=beschreibung_ariane.txt
+```
+
+Die Angaben stehen danach im lesbaren Inhaltsverzeichnis und unter `provenance:` in der
+`diskarchive.yaml`; bei einer `.cqm`-Quelle ergänzt das Werkzeug **selbst** `source_container`
+(Kommentar, Bezeichnung, Prüfsumme der `.cqm`), ohne die eigenen Angaben zu überschreiben.
+Die Beilage `beschreibung_ariane.txt` liegt an der Wurzel der `.zip`, nicht unter `dateien/`
+und kommt deshalb nie auf eine Diskette, wenn man den Ordner `dateien/` später mit `put`
+zurückschreibt.
+
+**Regeln, die das Werkzeug prüft** (bei einem Verstoß Ausgang 2, **bevor** die Diskette oder
+das Laufwerk angefasst wird):
+
+* Schlüssel bestehen nur aus Kleinbuchstaben, Ziffern und Unterstrich und beginnen mit einem
+  Buchstaben.
+* Beilagennamen haben keine Pfadanteile und kein `..`, kollidieren nicht mit Namen, die das
+  Archiv selbst vergibt (`diskarchive.yaml`, `<name>.txt`, `<name>.hfe`, `dateien/`) und sind
+  untereinander verschieden (Groß-/Kleinschreibung zählt nicht).
+* Beilagen sind Text bis höchstens 4 MiB; eine Datei mit NUL-Bytes gilt als Binärdatei und wird
+  abgewiesen.
+
+**Eine ganze Sammlung archivieren** — ein Archiv je Abbild, mit einer Schleife:
+
+```sh
+for f in discs/*.cqm; do
+    n=$(basename "$f" .cqm)
+    python3 -m app.disktool.archive "$f" "archive/$n.zip" "$n" \
+        --herkunft quelle=pofo.de --herkunft datei="$n.cqm"
+done
+```
+
+Zur Inventur dient danach die `diskarchive.yaml` jedes Archivs (siehe oben).
+
+**Mehrdisketten-Sätze (tar).** Gehören mehrere Disketten zu *einem* tar-Strom (`ariane1`,
+`ariane2`), sind die Dateien an den Diskettengrenzen abgeschnitten. Vollständig herausholen
+lassen sie sich mit `k1520disktool tar-satz ariane1.cqm ariane2.cqm --to ordner`; ein
+komplettes **Satzarchiv** samt Einzelarchiven je Diskette erzeugt das Skript
+`tools/p8000/pofo_archive.py` (`--quelle`, `--meta`, `--ziel`, `--nur NAME`, `--trocken`).
+Es verwendet dieselben Prüfregeln wie die Kommandozeile.
 
 Angaben des Dateisystems stehen dort bewusst nicht — die führen das
 Inhaltsverzeichnis und die Beiblätter. Der Kopf der Datei erklärt jedes Feld;
