@@ -540,7 +540,7 @@ def schreibe_uebersicht(ziel: Path, ergebnisse: list, saetze: list, meta: Meta,
          f"Webseite {WEB_URL}, abgerufen {meta.abruf}.  Quelle: `{quelle}` (nur gelesen).", ""]
     L.append(f"{len(ergebnisse)} Einzelarchive, {len(saetze)} Satzarchive (`saetze/`).  "
              "Spalte Befunde = Pruefung des Dateisystems (Anzahl je Schwere), "
-             "Archiv-Pruefung = ZIP entpackt, sha256 aller Einträge gegen `diskarchive.yaml`.")
+             "Archiv-Pruefung = ZIP entpackt, sha256 aller Eintraege gegen `diskarchive.yaml`.")
     L.append("")
     gruppen = collections.defaultdict(list)
     for r in ergebnisse:
@@ -569,7 +569,7 @@ def schreibe_uebersicht(ziel: Path, ergebnisse: list, saetze: list, meta: Meta,
             if r["crc"] != "ok":
                 bes.append(f"CQM-Pruefwert {r['crc']}")
             if i.get("tar_inhalt") and i["tar_inhalt"] != "gleich":
-                bes.append("tar-Gegenstück: " + i["tar_inhalt"])
+                bes.append("tar-Gegenstueck: " + i["tar_inhalt"])
             if i.get("tar_namen_groessen") not in (None, "gleich"):
                 bes.append("tar-Namen: " + i["tar_namen_groessen"])
             if r["name"] in beschr:
@@ -583,7 +583,7 @@ def schreibe_uebersicht(ziel: Path, ergebnisse: list, saetze: list, meta: Meta,
         L.append("")
     if saetze:
         L += ["## Satzarchive (tar-Saetze ueber mehrere Disketten)", "",
-              "| Satz | Disketten | Dateien | Groesse | Befunde | tar-Gegenstück (GNU tar) | Abgeschnitten im Satz |",
+              "| Satz | Disketten | Dateien | Groesse | Befunde | tar-Gegenstueck (GNU tar) | Abgeschnitten im Satz |",
               "|---|---|---|---|---|---|---|"]
         for r in saetze:
             probleme, i = pruef[r["name"]]
@@ -602,7 +602,7 @@ def schreibe_uebersicht(ziel: Path, ergebnisse: list, saetze: list, meta: Meta,
         for p in probleme:
             A.append(f"{r['name']}: {p}")
         if i.get("tar_inhalt") and i["tar_inhalt"] != "gleich":
-            A.append(f"{r['name']}: Inhalt weicht vom tar-Gegenstück ab: {i['tar_inhalt']}")
+            A.append(f"{r['name']}: Inhalt weicht vom tar-Gegenstueck ab: {i['tar_inhalt']}")
         if i.get("tar_namen_groessen") not in (None, "gleich"):
             A.append(f"{r['name']}: tar-Namen/Groessen: {i['tar_namen_groessen']} "
                      f"{i.get('tar_abweichung', '')}")

@@ -596,6 +596,16 @@ Vertrag; der Stanzer wird an seine Datei **gebunden** und schreibt nach 0,5 s St
 Maschinenzeit zurück.  Kasten „Lochstreifen“ nur mit Karte, kein Kürzel, nicht im Save-State.
 **Vor Arbeiten daran: `doc/merkposten/lochstreifen.md` lesen**; Entwurf `doc/design/23_lochstreifen.md`.
 
+## CopyQM (.cqm) und tar-Disketten (Stand 2026-10-17, Zweig `cqm`)
+
+`.cqm` ist ein **nur lesbarer** Container (`core/peripherals/floppy_drive/cqm_codec.*`, Schreibschutz
+im Kern erzwungen, `save-as` nach `.hfe`/`.img`/`.dmk` geht); P8000-Disketten ohne Dateisystem sind
+`tar720` (`core/filesystem/tar/`, Mehrdisketten-Strom über `tar-satz`/„tar-Satz öffnen…“).
+WEGA/tar tragen UNIX-Angaben statt UDOS-Kopfsektor (`FsType`, `istUnix()`).  Archive der
+pofo.de-Sammlung: `tools/p8000/pofo_archive.py`.
+**Vor Arbeiten daran: `doc/merkposten/cqm.md` lesen** (CRC-Tabellenfehler `& 0x3F`, Offsets);
+Entwurf `doc/design/33_cqm.md`.
+
 ## Kassette K5020/K5200 (alle Maschinen außer P8000; PC 1715 nur mechanisch)
 
 AKB K5020 (zwei Z80-PIOs) mit zwei Laufwerken K5200 als steckbare Option auf **E/A 30H–37H**
