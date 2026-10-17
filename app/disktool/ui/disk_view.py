@@ -29,6 +29,9 @@ from PySide6.QtWidgets import (
 )
 
 #: Eigener MIME-Typ fuer das Ziehen von der Diskette in einen Ordner.
+#: Endungen, die das DiskTool als Abbild oeffnet (Gross-/Kleinschreibung egal).
+ABBILD_ENDUNGEN = (".hfe", ".dmk", ".img", ".cqm")
+
 DISK_MIME = "application/x-k1520-diskfiles"
 
 #: Rolle, unter der die eindeutige Bezeichnung („Side1/NAME") am Eintrag haengt.
@@ -40,6 +43,8 @@ class _Tree(QTreeWidget):
     """Baum mit Ziehen (zum Ordner) und Ablegen (Dateien aus dem Dateimanager)."""
 
     files_dropped = Signal(list, int)   # (Pfade, Ziel-Seite)
+    image_dropped = Signal(str)         # Abbilddatei von aussen -> oeffnen
+    abgelehnt = Signal(str)             # Grund (Statuszeile)
 
     #: Satz fuer die leere Liste — gesetzt von :meth:`DiskView.set_disk`.
     leer_text = ""
@@ -84,19 +89,50 @@ class _Tree(QTreeWidget):
 
     # ── Ablegen: Dateien aus dem Dateimanager ───────────────────────────────
 
+    def _urteil(self, mime):
+        """Was wuerde ein Ablegen von `mime` hier bewirken?
+
+        Rueckgabe ``(art, pfade, grund)``; ``art`` ist ``"abbild"``, ``"dateien"``
+        oder ``None`` (abgelehnt, `grund` sagt warum).  Regel: eine Datei mit
+        Abbild-Endung, die von AUSSEN faellt, wird GEOEFFNET (nicht auf die
+        Diskette geschrieben); es darf dann aber nur diese eine Datei sein.
+        """
+        if not mime.hasUrls():
+            return None, [], ""
+        urls = mime.urls()
+        pfade = [u.toLocalFile() for u in urls if u.isLocalFile()]
+        if not pfade or len(pfade) != len(urls):
+            return None, [], "Nur lokale Dateien lassen sich ablegen."
+        abbilder = [p for p in pfade if p.lower().endswith(ABBILD_ENDUNGEN)]
+        if abbilder:
+            if len(pfade) != 1:
+                return None, [], ("Es lässt sich nur ein Abbild auf einmal öffnen "
+                                  "(und nicht zusammen mit anderen Dateien).")
+            return "abbild", pfade, ""
+        return "dateien", pfade, ""
+
     def dragEnterEvent(self, event):  # noqa: N802
-        if event.mimeData().hasUrls():
+        art, _, grund = self._urteil(event.mimeData())
+        if art:
             event.acceptProposedAction()
+        else:
+            event.ignore()
+            if grund:
+                self.abgelehnt.emit(grund)
 
     def dragMoveEvent(self, event):  # noqa: N802
-        if event.mimeData().hasUrls():
-            event.acceptProposedAction()
+        self.dragEnterEvent(event)
 
     def dropEvent(self, event):  # noqa: N802
-        if not event.mimeData().hasUrls():
+        art, pfade, grund = self._urteil(event.mimeData())
+        if art is None:
+            event.ignore()
+            if grund:
+                self.abgelehnt.emit(grund)
             return
-        pfade = [u.toLocalFile() for u in event.mimeData().urls() if u.isLocalFile()]
-        if not pfade:
+        if art == "abbild":
+            event.acceptProposedAction()
+            self.image_dropped.emit(pfade[0])
             return
         # Auf welche Seite wurde abgelegt?  Die Gruppe unter dem Mauszeiger
         # entscheidet; ohne Treffer die erste Seite.
@@ -116,6 +152,8 @@ class DiskView(QWidget):
     """Diskettenseite des Fensters: Überschrift und Liste."""
 
     files_dropped = Signal(list, int)
+    image_dropped = Signal(str)
+    abgelehnt = Signal(str)
     #: Rechtsklick → „Eigenschaften…" bzw. Doppelklick auf eine Datei.
     properties_requested = Signal(str)     # Referenz („Side1/NAME")
     extract_requested = Signal(list)       # Referenzen
@@ -141,6 +179,8 @@ class DiskView(QWidget):
             kopfzeile.setSectionResizeMode(spalte, QHeaderView.ResizeToContents)
         self.tree.setTextElideMode(Qt.ElideMiddle)
         self.tree.files_dropped.connect(self.files_dropped)
+        self.tree.image_dropped.connect(self.image_dropped)
+        self.tree.abgelehnt.connect(self.abgelehnt)
         self.tree.setContextMenuPolicy(Qt.CustomContextMenu)
         self.tree.customContextMenuRequested.connect(self._kontextmenue)
         self.tree.itemDoubleClicked.connect(self._doppelklick)

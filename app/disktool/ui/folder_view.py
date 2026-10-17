@@ -56,6 +56,8 @@ class _Tree(QTreeWidget):
 
     disk_files_dropped = Signal(list)   # Referenzen ("Side1/NAME")
     nach_oben = Signal()                # Ruecktaste
+    folder_dropped = Signal(str)        # Verzeichnis von aussen -> Arbeitsordner
+    abgelehnt = Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -67,22 +69,49 @@ class _Tree(QTreeWidget):
         # oeffnete der Doppelklick das Eingabefeld statt den Ordner.
         self.setEditTriggers(QAbstractItemView.NoEditTriggers)
 
+    def _ordner_aus(self, mime):
+        """Genau ein lokales Verzeichnis aus `mime` oder ``(None, Grund)``."""
+        if not mime.hasUrls():
+            return None, ""
+        urls = mime.urls()
+        if not urls or any(not u.isLocalFile() for u in urls):
+            return None, "Nur lokale Ordner lassen sich ablegen."
+        if len(urls) != 1:
+            return None, "Es lässt sich nur ein Ordner auf einmal als Arbeitsordner wählen."
+        pfad = urls[0].toLocalFile()
+        if not Path(pfad).is_dir():
+            return None, "Hier lassen sich nur Ordner ablegen (Abbilder gehören auf die linke Seite)."
+        return pfad, ""
+
     def dragEnterEvent(self, event):  # noqa: N802
-        if event.mimeData().hasFormat(DISK_MIME):
+        mime = event.mimeData()
+        pfad, grund = self._ordner_aus(mime)
+        if mime.hasFormat(DISK_MIME) or pfad:
             event.acceptProposedAction()
+        else:
+            event.ignore()
+            if grund:
+                self.abgelehnt.emit(grund)
 
     def dragMoveEvent(self, event):  # noqa: N802
-        if event.mimeData().hasFormat(DISK_MIME):
-            event.acceptProposedAction()
+        self.dragEnterEvent(event)
 
     def dropEvent(self, event):  # noqa: N802
-        if not event.mimeData().hasFormat(DISK_MIME):
+        if event.mimeData().hasFormat(DISK_MIME):
+            roh = bytes(event.mimeData().data(DISK_MIME)).decode("utf-8")
+            refs = [r for r in roh.split("\n") if r]
+            if refs:
+                self.disk_files_dropped.emit(refs)
+            event.acceptProposedAction()
             return
-        roh = bytes(event.mimeData().data(DISK_MIME)).decode("utf-8")
-        refs = [r for r in roh.split("\n") if r]
-        if refs:
-            self.disk_files_dropped.emit(refs)
+        pfad, grund = self._ordner_aus(event.mimeData())
+        if pfad is None:
+            event.ignore()
+            if grund:
+                self.abgelehnt.emit(grund)
+            return
         event.acceptProposedAction()
+        self.folder_dropped.emit(pfad)
 
     def keyPressEvent(self, event):  # noqa: N802
         # Ruecktaste = eine Ebene hinauf, wie in jedem Dateimanager.  In dieser
@@ -99,6 +128,8 @@ class FolderView(QWidget):
     folder_changed = Signal(str)
     disk_files_dropped = Signal(list)
     choose_requested = Signal()
+    folder_dropped = Signal(str)
+    abgelehnt = Signal(str)
     #: Einzeiler fuers Protokoll/die Statuszeile (unlesbarer Ordner, Fehleingabe).
     hinweis = Signal(str)
 
@@ -138,6 +169,8 @@ class FolderView(QWidget):
         self.tree.setHeaderLabels(["Name", "Größe"])
         self.tree.setColumnWidth(0, 260)
         self.tree.disk_files_dropped.connect(self.disk_files_dropped)
+        self.tree.folder_dropped.connect(self.folder_dropped)
+        self.tree.abgelehnt.connect(self.abgelehnt)
         self.tree.nach_oben.connect(self.hinauf)
         self.tree.itemActivated.connect(self._aktiviert)
         self.tree.itemChanged.connect(self._eintrag_geaendert)

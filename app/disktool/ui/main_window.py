@@ -38,7 +38,7 @@ import tempfile
 from pathlib import Path
 from typing import List, Optional
 
-from PySide6.QtCore import QCoreApplication, QSettings, Qt, QTimer
+from PySide6.QtCore import QCoreApplication, QEvent, QObject, QSettings, Qt, QTimer
 from PySide6.QtGui import QAction, QActionGroup, QKeySequence
 from PySide6.QtWidgets import (
     QApplication, QDialog, QFileDialog, QFrame, QInputDialog, QLabel, QMainWindow,
@@ -86,6 +86,36 @@ ZULETZT_MAX = 8
 SCHREIBT_STIL = ("background: #c0504d; color: white; font-weight: bold;"
                  " padding: 1px 6px; border-radius: 3px;")
 
+
+
+class _AblageFilter(QObject):
+    """Lehnt Ablagen auf alles ausser den beiden Ansichten ab.
+
+    Textfelder (Protokoll, Dialoge, Diskeditor) nehmen von sich aus Text und
+    mancherorts Dateipfade an; der Filter sitzt an der Anwendung und macht daraus
+    ueberall den "verboten"-Zeiger.  Er stirbt mit dem Fenster (Elternobjekt).
+    """
+
+    _ARTEN = (QEvent.DragEnter, QEvent.DragMove, QEvent.Drop)
+
+    def __init__(self, fenster, erlaubt):
+        super().__init__(fenster)
+        self._fenster = fenster
+        self._erlaubt = erlaubt
+
+    def _gehoert_zu_uns(self, obj) -> bool:
+        """Fenster selbst oder ein Dialog/Editor, dessen Elternfenster es ist."""
+        if not isinstance(obj, QWidget):
+            return False
+        oben = obj.window()
+        return oben is self._fenster or oben.parentWidget() is self._fenster
+
+    def eventFilter(self, obj, ev):  # noqa: N802
+        if (ev.type() in self._ARTEN and obj not in self._erlaubt
+                and self._gehoert_zu_uns(obj)):
+            ev.ignore()
+            return True
+        return False
 
 
 class MainWindow(QMainWindow):
@@ -417,6 +447,15 @@ class MainWindow(QMainWindow):
         self.folder_view.folder_changed.connect(lambda _: self._aktionen_pruefen())
         self.folder_view.disk_files_dropped.connect(self._extrahieren_refs)
         self.disk_view.files_dropped.connect(self._einfuegen_pfade)
+        # Ziehen und Ablegen von aussen: Abbild links, Ordner rechts; alles andere
+        # wird abgelehnt (Hinweis in der Statuszeile, kein Meldungsfenster).
+        self.disk_view.image_dropped.connect(self._abbild_abgelegt)
+        self.folder_view.folder_dropped.connect(self._ordner_abgelegt)
+        self.disk_view.abgelehnt.connect(self._ablage_abgelehnt)
+        self.folder_view.abgelehnt.connect(self._ablage_abgelehnt)
+        self._ablage_filter = _AblageFilter(
+            self, (self.disk_view.tree.viewport(), self.folder_view.tree.viewport()))
+        QApplication.instance().installEventFilter(self._ablage_filter)
         self.disk_view.properties_requested.connect(self._eigenschaften_ref)
         self.disk_view.extract_requested.connect(self._extrahieren_refs)
         self.disk_view.erase_requested.connect(self._loeschen_refs)
@@ -1964,6 +2003,19 @@ class MainWindow(QMainWindow):
     # ════════════════════════════════════════════════════════════════════════
     # Dialoge (Klick-Behandler)
     # ════════════════════════════════════════════════════════════════════════
+
+    def _abbild_abgelegt(self, pfad: str) -> None:
+        """Abbild von aussen auf die Diskettenansicht gezogen = *Datei ▸ Öffnen*."""
+        if self._darf_verwerfen():
+            self.open_image(pfad)
+
+    def _ordner_abgelegt(self, pfad: str) -> None:
+        """Ordner von aussen auf die Ordneransicht gezogen = Ordnerwahl."""
+        self.folder_view.set_folder(pfad)
+        self.statusBar().showMessage(f"Arbeitsordner: {pfad}", STATUS_DAUER)
+
+    def _ablage_abgelehnt(self, grund: str) -> None:
+        self.statusBar().showMessage(f"Nicht abgelegt: {grund}", STATUS_DAUER)
 
     def _oeffnen_dialog(self) -> None:
         if not self._darf_verwerfen():

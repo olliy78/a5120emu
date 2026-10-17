@@ -96,6 +96,23 @@ Vier Knöpfe zwischen den Listen — außen die Stapel, innen die Auswahl:
 Dasselbe geht mit der Maus: Dateien von einer Hälfte in die andere ziehen. Und
 über *Bearbeiten* mit Strg+→ und Strg+←.
 
+**Ziehen und Ablegen aus dem Dateimanager.** Die Fensterhälften nehmen auch
+Dinge von außen an — und sonst nichts (überall sonst zeigt der Mauszeiger
+„verboten"; die Statuszeile nennt den Grund):
+
+- **Links (Diskette):** ein **Abbild** (`.hfe`, `.dmk`, `.img`, `.cqm`, Groß-/Kleinschreibung
+  egal) wird **geöffnet**, genau wie *Datei ▸ Öffnen* (mit Rückfrage bei
+  ungespeicherten Änderungen). Es darf nur **ein** Abbild auf einmal sein, und
+  nicht zusammen mit anderen Dateien. Andere Dateien und Ordner werden wie bisher
+  **auf die Diskette geschrieben**.
+- **Rechts (Ordner):** **ein** Verzeichnis wird zum **Arbeitsordner**, wie über die
+  Ordnerwahl. Dateien oder mehrere Verzeichnisse werden abgelehnt. Das Ziehen von
+  der Diskette in den Ordner holt weiter Dateien heraus.
+- **Vorrang der Abbild-Endung:** eine Datei mit Abbild-Endung, die von außen auf
+  die linke Seite fällt, wird nie als Datei geschrieben. Will man eine solche
+  Datei auf die Diskette bringen, wählt man sie in der Ordneransicht (rechts)
+  aus und benutzt `|←` bzw. dem entsprechenden Menüpunkt (Strg+←).
+
 **Binär oder Text?** Im Menü *Übertragung*. Bei *Text* werden die Zeilenenden
 umgesetzt (CR LF ↔ LF) — richtig für Quelltexte und Dokumente, **falsch für
 Programme**. Was gerade gilt, steht rechts in der Statuszeile. Einzelne Dateien
