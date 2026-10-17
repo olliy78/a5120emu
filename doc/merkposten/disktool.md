@@ -906,6 +906,30 @@ Was beim Weiterarbeiten zu wissen ist:
   `test_archive_traegt_ein_maschinenlesbares_verzeichnis` (rechnet `size`/`sha256`
   gegen den wirklichen ZIP-Eintrag nach und verlangt, dass jedes Mitglied der `.zip`
   genau einmal erklärt ist).
+- **Archiv mit Herkunft: `provenance=`, `beilagen=`, `ohne_abbild=`** (2026-10-17,
+  `create_archive`; Aufrufer: `tools/p8000/pofo_archive.py`, Sammlung pofo.de).  Drei
+  optionale Parameter, ohne sie bleibt das Archiv bytegleich wie vorher (Wächter
+  `test_archiv_herkunft.py`).  **(1) `provenance`** (Dict, freie Schlüssel) wird als
+  Abschnitt `provenance:` in die `diskarchive.yaml` übernommen (additiv, `diskarchive: 1`)
+  und im `.txt` als „HERKUNFT / BESCHREIBUNG" gedruckt; der Schlüssel `hinweise` ist eine
+  Zeilenliste (z. B. „Datei X endet auf Diskette 1 abgeschnitten, Fortsetzung auf 2").
+  Das Archiv wertet nichts davon aus.  **(2) `beilagen`** (`{Pfad: Text|Bytes}`) liegen an
+  der **Wurzel** der `.zip` und stehen unter `attachments` — **nie unter `dateien/`**, sonst
+  fügte `put <ordner>` sie als Datei der Diskette ein (`istBeiblatt()` kennt sie nicht).
+  Lange Beschreibungstexte gehören hierher, nicht ins `.txt`.  Fremde Texte (Webseite)
+  werden nur kopiert.  **(3) `ohne_abbild`** für ein Archiv über einen **tar-Satz**
+  (`DiskTool.open_tar_satz`): es gibt kein einzelnes Abbild (`export_image` lieferte nur
+  die ERSTE Diskette); dann entfallen `.hfe`, `image:` und `source_container` (die
+  Metadaten gälten nur für die erste Diskette), das `.txt` sagt es.  Die Abbilder des
+  Satzes sind seine Einzelarchive.
+- **Zwei Auszugs-Fallen aus der P8000-Sammlung** (2026-10-17): **(1)** CP/M-Namen sind
+  beliebige Bytes (OS/M-Disketten tragen UNIX-Namen `/Z/HOFFM`, `GW/ZSID.DOC`); `extractAll`
+  macht außerhalb von UNIX-Dateisystemen `/` zu `_` (wie `:`), sonst bricht der Auszug ab bzw.
+  der Name wäre ein absoluter Pfad aus dem Zielordner.  `_erwartete_namen()` wiederholt die
+  Regel.  Wächter `test_cpm_name_mit_schraegstrich_…`.  **(2)** tar-Hartlink, dessen Ziel auf
+  einer ANDEREN Diskette des Satzes liegt: leere, `damaged`-markierte Datei + Befund
+  `tar.linkziel` statt Abbruch des ganzen Auszugs (`TarFs.HartlinkOhneZiel…`); im
+  `tar-satz` ist das Ziel da und der Link wird zur vollen Kopie.
 - **`.fileinfo` — die Angaben JE DATEI** (2026-08-22, Entwurf §13d, Befund
   `doc/bug_disktool_Programmdatei.md`).  Die Sammelbeiblätter entstehen nur beim
   **Vollexport**; eine einzeln herausgeholte UDOS-Programmdatei kam deshalb ohne

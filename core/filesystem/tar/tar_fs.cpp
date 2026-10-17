@@ -301,6 +301,9 @@ std::vector<FileEntry> TarFileSystem::list() const {
             bool g = false;
             const Eintrag* z = finde(s, bereinige(e.k.linkname, g));
             f.size = z ? z->ist : 0;
+            // Ziel auf einer anderen Diskette des Satzes: die Datei bleibt leer und gilt als
+            // unvollstaendig (tar.linkziel) — ein Abbruch des ganzen Auszugs verlore alles.
+            if (!z) f.damaged = true;
         }
         if (e.k.typ == '5' || e.k.typ == '3' || e.k.typ == '4' || e.k.typ == '6') f.size = 0;
         if (e.k.typ == '2') f.size = e.k.linkname.size();
@@ -326,8 +329,11 @@ bool TarFileSystem::lies(const Scan& s, const Eintrag& e, std::vector<uint8_t>& 
     if (e.k.typ == '2') { out.assign(e.k.linkname.begin(), e.k.linkname.end()); return true; }
     if (e.k.typ == '1') {
         bool g = false;
-        const Eintrag* z = tiefe < 8 ? finde(s, bereinige(e.k.linkname, g)) : nullptr;
-        if (!z) return fail(e.name + ": Linkziel '" + e.k.linkname + "' steht nicht im Strom");
+        if (tiefe >= 8) return fail(e.name + ": Linkkette zu tief (Schleife?)");
+        const Eintrag* z = finde(s, bereinige(e.k.linkname, g));
+        // Ziel nicht im Strom (liegt auf einer anderen Diskette des Satzes): leer lesen,
+        // list() markiert den Eintrag als unvollstaendig, check() meldet tar.linkziel.
+        if (!z) return true;
         return lies(s, *z, out, tiefe + 1);
     }
     out.resize(static_cast<size_t>(e.ist));
@@ -411,6 +417,14 @@ FsCheckReport TarFileSystem::check(FsCheckLevel level, bool nachladen) const {
               "Die letzte Datei ist abgeschnitten: " + std::to_string(e.ist) + " von "
               + std::to_string(e.k.size) + " Byte auf dieser Diskette; der Strom setzt sich "
               "auf der naechsten Diskette fort (tar-satz).  Extrahiert wird das Teilstueck");
+    }
+    for (const Eintrag& e : s.e) {
+        if (e.k.typ != '1') continue;
+        bool g = false;
+        if (finde(s, bereinige(e.k.linkname, g))) continue;
+        f.add("tar.linkziel", FsSeverity::Warnung, FsLayer::Verwaltung, e.name,
+              "Hartlink auf '" + e.k.linkname + "': das Ziel steht nicht auf dieser Diskette; "
+              "die Datei bleibt leer.  Mit den uebrigen Disketten zusammen: tar-satz");
     }
     if (s.doppelt > 0)
         f.add("tar.doppelt", FsSeverity::Info, FsLayer::Verwaltung, "(Namen)",

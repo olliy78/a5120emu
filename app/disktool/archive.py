@@ -269,8 +269,55 @@ def _cqm_angaben(tool: "DiskTool") -> dict:
     return info if info.get("type") == "cqm" else {}
 
 
+#: Beschriftung der Schluessel von ``provenance`` im Inhaltsverzeichnis, in der
+#: Reihenfolge der Ausgabe.  Unbekannte Schluessel folgen danach unter ihrem Namen.
+_HERKUNFT_ZEILEN = (
+    ("source_url", "Quelle"), ("retrieved", "Abgerufen"), ("set_name", "Satz"),
+    ("set_id", "Satz-Nr."), ("version", "Version"), ("file_name", "Dateiname"),
+    ("file_type", "Dateityp"), ("file_format", "Dateiformat"),
+    ("web_label", "Etikett (Web)"), ("source_sha256", "sha256 der Quelle"),
+    ("container_description", "Container"), ("container_comment", "Container-Kommentar"),
+    ("disks", "Disketten"), ("disk_index", "Diskette Nr."),
+)
+
+
+def _herkunft_abschnitt(provenance: dict, beilagen) -> list:
+    """Der Abschnitt „Herkunft/Beschreibung" (leer, wenn nichts angegeben ist).
+
+    Allgemein gehalten: das Archiv weiss nichts von einer bestimmten Webseite, es
+    druckt, was der Aufrufer unter ``provenance`` mitgibt.  Der lange Beschreibungstext
+    steht NICHT hier, sondern in einem Beiblatt (``beilagen``); hier wird auf es
+    verwiesen.  Listen (``hinweise``) werden Zeile fuer Zeile aufgefuehrt.
+    """
+    if not provenance and not beilagen:
+        return []
+    z = ["HERKUNFT / BESCHREIBUNG", "-" * 70]
+    bekannt = {k for k, _ in _HERKUNFT_ZEILEN}
+    reihe = [(k, n) for k, n in _HERKUNFT_ZEILEN if k in (provenance or {})]
+    reihe += [(k, k) for k in (provenance or {}) if k not in bekannt and k != "hinweise"]
+    for k, name in reihe:
+        wert = provenance[k]
+        if wert in ("", None, []):
+            continue
+        if isinstance(wert, (list, tuple)):
+            wert = ", ".join(str(w) for w in wert)
+        text = str(wert).strip().replace("\n", "\n" + " " * 15)
+        z.append(f"{name:<14} {text}")
+    hinweise = (provenance or {}).get("hinweise") or []
+    if hinweise:
+        z.append("Hinweise")
+        z += [f"  - {h}" for h in hinweise]
+    if beilagen:
+        z.append("Beiblaetter    " + ", ".join(sorted(beilagen)))
+        z.append("               (der Beschreibungstext steht im Beiblatt, nicht hier)")
+    z.append("")
+    return z
+
+
 def inhaltsverzeichnis(tool: "DiskTool", quelle: str = "",
-                       bezeichnung: str = "", herkunft: str = "") -> str:
+                       bezeichnung: str = "", herkunft: str = "",
+                       provenance: dict = None, beilagen=(),
+                       ohne_abbild: bool = False) -> str:
     """Das Inhaltsverzeichnis als Text — Kopf, Tabelle, Legende.
 
     Args:
@@ -301,18 +348,22 @@ def inhaltsverzeichnis(tool: "DiskTool", quelle: str = "",
     z.append("")
     if bezeichnung:
         z.append(f"Beschriftung  {bezeichnung}")
-    datei = Path(quelle or tool.path).name
+    # Ein Satz aus mehreren Disketten hat KEIN einzelnes Abbild: weder Dateiname
+    # noch Container-Angaben der ersten Diskette duerfen fuer ihn stehen.
+    datei = "" if ohne_abbild else Path(quelle or tool.path).name
     if datei:
         z.append(f"Abbild        {datei}")
-    cqm = _cqm_angaben(tool)
+    cqm = {} if ohne_abbild else _cqm_angaben(tool)
     if cqm:
-        z.append("Container     CopyQM (.cqm, nur lesbar) — im Archiv als .hfe abgelegt")
+        z.append("Container     CopyQM (.cqm, nur lesbar)"
+                 + (" — kein Abbild im Archiv" if ohne_abbild
+                    else " — im Archiv als .hfe abgelegt"))
         for schluessel, name in _CQM_ZEILEN:
             if cqm.get(schluessel):
                 z.append(f"{name:<13} {cqm[schluessel]}")
     if herkunft:
         z.append(f"Herkunft      {herkunft}")
-    elif not datei:
+    elif not datei and not ohne_abbild:
         z.append("Herkunft      physisches Laufwerk — kein Abbild als Quelle")
     z.append(f"Format        {tool.format}")
     z.append(f"Dateisystem   {tool.filesystem}"
@@ -325,6 +376,7 @@ def inhaltsverzeichnis(tool: "DiskTool", quelle: str = "",
         z.append("Kommentar     " + cqm["comment"].strip().replace("\n", "\n              "))
     z.append(f"Archiviert    {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}")
     z.append("")
+    z += _herkunft_abschnitt(provenance, beilagen)
 
     for v in tool.volumes():
         name = v.dir or "Datentraeger"
@@ -363,8 +415,12 @@ def inhaltsverzeichnis(tool: "DiskTool", quelle: str = "",
     z.append(_legende(hat_udos, hat_cpm, hat_wega))
     z.append("")
     z.append("Der Unterordner `" + DATEI_ORDNER + "/` enthaelt dieselben Dateien als")
-    z.append("gewoehnliche Dateien; das beiliegende .hfe-Abbild ist die verlustfreie")
-    z.append("Fassung, aus der sich alles Uebrige wiederherstellen laesst.")
+    if ohne_abbild:
+        z.append("gewoehnliche Dateien; ein Abbild liegt nicht bei (die Dateien stammen aus")
+        z.append("einem Satz mehrerer Disketten — die Abbilder sind die Einzelarchive).")
+    else:
+        z.append("gewoehnliche Dateien; das beiliegende .hfe-Abbild ist die verlustfreie")
+        z.append("Fassung, aus der sich alles Uebrige wiederherstellen laesst.")
     z.append("")
     z.append("Zum Wiederherstellen der DATEIEN (ohne das Abbild): den Ordner `"
              + DATEI_ORDNER + "/`")
@@ -408,6 +464,9 @@ INVENTAR_KOPF = """\
 #   catalogue     das menschenlesbare Inhaltsverzeichnis.
 #   source_container  nur bei einer .cqm-Quelle: ihre Metadaten (type, description, label,
 #                 comment, interleave, skew, cylinders, crc) und sha256 der Quelldatei.
+#   provenance    nur wenn der Aufrufer Herkunftsangaben mitgab (z. B. Webseite, Satz,
+#                 Version, Abrufdatum, sha256 der Quelle, Hinweise): freie Schluessel,
+#                 die das Archiv nicht auswertet.
 #   files_root    Ordner im Archiv, unter dem die Dateien liegen.
 #   files         eine Zeile je Datei der Diskette:
 #     path        Pfad IM ARCHIV (Eintrag der .zip), Trenner '/', stets relativ.
@@ -425,7 +484,9 @@ INVENTAR_KOPF = """\
 #     damaged     nur wenn wahr: die Datei war nicht vollstaendig lesbar; ihr
 #                 Inhalt ist unvollstaendig und zaehlt nicht als Fassung.
 #   attachments   Beiblaetter des Auszugs — Angaben ueber die Dateien, aber
-#                 selbst KEINE Dateien der Diskette.
+#                 selbst KEINE Dateien der Diskette.  Ein vom Aufrufer mitgegebenes
+#                 Beiblatt (z. B. `beschreibung_*.txt`) liegt an der Wurzel der .zip,
+#                 NICHT unter `dateien/` (sonst wuerde `put` es als Datei einfuegen).
 """
 
 
@@ -461,15 +522,18 @@ def _erwartete_namen(eintraege) -> dict:
         if e.ist_unix and e.type != "-":
             continue            # WEGA: Verzeichnisse/Geraete sind keine Dateien des Auszugs
         datei = e.name.replace(":", "_")
+        if not e.ist_unix:
+            datei = datei.replace("/", "_")      # wie DiskVolume::extractAll (CP/M-Namen)
         erwartet[f"{e.side_dir}/{datei}" if e.side_dir else datei] = e
     return erwartet
 
 
-def inventar(eintraege, dateien_ordner: Path, *, abbild: Path, abbild_name: str,
+def inventar(eintraege, dateien_ordner: Path, *, abbild: Path = None, abbild_name: str = "",
              verzeichnis_name: str, verzeichnis_text: str,
              bezeichnung: str = "", quelle: str = "", herkunft: str = "",
              text_mode: bool = False, container=None,
-             quelle_pfad: str = "") -> dict:
+             quelle_pfad: str = "", provenance: dict = None,
+             beilagen: dict = None) -> dict:
     """Das maschinenlesbare Verzeichnis als Datenstruktur.
 
     Gerechnet wird über die Dateien, wie sie **im Archiv landen** — nicht über
@@ -516,7 +580,6 @@ def inventar(eintraege, dateien_ordner: Path, *, abbild: Path, abbild_name: str,
         "transfer": "text" if text_mode else "binary",
         "label": bezeichnung,
         "source": Path(quelle).name if quelle else herkunft,
-        "image": _angabe_datei(abbild, abbild_name),
         "catalogue": _angabe(verzeichnis_name,
                              len(verzeichnis_text.encode("utf-8")),
                              hashlib.sha256(
@@ -525,6 +588,19 @@ def inventar(eintraege, dateien_ordner: Path, *, abbild: Path, abbild_name: str,
         "files": dateien,
         "attachments": beiblaetter,
     }
+    if abbild is not None:
+        # Reihenfolge der Schluessel: image gehoert hinter source (wie bisher).
+        neu = {}
+        for k, v in daten.items():
+            neu[k] = v
+            if k == "source":
+                neu["image"] = _angabe_datei(abbild, abbild_name)
+        daten = neu
+    for pfad, inhalt in sorted((beilagen or {}).items()):
+        b = inhalt.encode("utf-8") if isinstance(inhalt, str) else bytes(inhalt)
+        daten["attachments"].append(_angabe(pfad, len(b), hashlib.sha256(b).hexdigest()))
+    if provenance:
+        daten["provenance"] = dict(provenance)
     if container:
         # Additiv (diskarchive bleibt 1): das .cqm selbst steht nicht im Archiv (dort
         # liegt die verlustfreie .hfe-Fassung), wohl aber seine Herkunft: Metadaten
@@ -551,7 +627,9 @@ def inventar_yaml(daten: dict) -> str:
 
 
 def create_archive(tool: "DiskTool", zip_path, text_mode: bool = False,
-                   bezeichnung: str = "", herkunft: str = "") -> Path:
+                   bezeichnung: str = "", herkunft: str = "",
+                   provenance: dict = None, beilagen: dict = None,
+                   ohne_abbild: bool = False) -> Path:
     """Abbild, Dateien und beide Inhaltsverzeichnisse in eine `.zip` packen.
 
     Zwei Verzeichnisse, weil zwei Leser: `<name>.txt` fuer den Menschen (mit
@@ -572,6 +650,15 @@ def create_archive(tool: "DiskTool", zip_path, text_mode: bool = False,
             offenen Diskette — eine physische Diskette hat keinen, dort ist die
             Beschriftung die einzige Auskunft (`NAMENLOS` als letzter Rückfall).
         herkunft: Woher die Diskette kam, wenn es keine Quelldatei gibt.
+        provenance: Herkunftsangaben als Dict (freie Schluessel; Webseite, Satz,
+            Version, Abrufdatum, Pruefsumme der Quelle, ``hinweise``: Liste von
+            Zeilen).  Landet als Abschnitt `provenance:` in der `diskarchive.yaml`
+            (additiv, ``diskarchive`` bleibt 1) und als Abschnitt
+            „HERKUNFT / BESCHREIBUNG" im Inhaltsverzeichnis.
+        beilagen: ``{Pfad im Archiv: Text|Bytes}`` — zusaetzliche Beiblaetter an der
+            Wurzel der `.zip`, in `attachments` verzeichnet.
+        ohne_abbild: kein `.hfe` ins Archiv (und kein `image:`) — fuer ein Archiv
+            ueber MEHRERE Disketten (tar-Satz), wo es ein einzelnes Abbild nicht gibt.
 
     Returns:
         Der geschriebene Archivpfad.
@@ -581,7 +668,9 @@ def create_archive(tool: "DiskTool", zip_path, text_mode: bool = False,
         ziel = ziel.with_suffix(".zip")
 
     stamm = dateiname(bezeichnung) or Path(tool.path).stem or NAMENLOS
-    text = inhaltsverzeichnis(tool, bezeichnung=bezeichnung, herkunft=herkunft)
+    text = inhaltsverzeichnis(tool, bezeichnung=bezeichnung, herkunft=herkunft,
+                              provenance=provenance, beilagen=tuple(beilagen or ()),
+                              ohne_abbild=ohne_abbild)
     eintraege = tool.list()
 
     with tempfile.TemporaryDirectory(prefix="k1520_archiv_") as tmp:
@@ -589,7 +678,8 @@ def create_archive(tool: "DiskTool", zip_path, text_mode: bool = False,
 
         # 1) Abbild verlustfrei als .hfe — ohne die Bindung umzuhaengen.
         abbild = tmpdir / f"{stamm}.hfe"
-        tool.export_image(abbild)
+        if not ohne_abbild:
+            tool.export_image(abbild)
 
         # 2) Die Dateien wie bei einem gewoehnlichen Auszug (inkl. SideN/).
         dateien = tmpdir / DATEI_ORDNER
@@ -598,17 +688,24 @@ def create_archive(tool: "DiskTool", zip_path, text_mode: bool = False,
 
         # 3) Das maschinenlesbare Verzeichnis — es rechnet ueber die Dateien,
         #    wie sie gleich in die .zip gehen, also nach dem Auszug.
-        daten = inventar(eintraege, dateien, abbild=abbild,
+        daten = inventar(eintraege, dateien,
+                         abbild=None if ohne_abbild else abbild,
                          abbild_name=abbild.name,
                          verzeichnis_name=f"{stamm}.txt", verzeichnis_text=text,
-                         bezeichnung=bezeichnung, quelle=tool.path,
+                         bezeichnung=bezeichnung,
+                         quelle="" if ohne_abbild else tool.path,
                          herkunft=herkunft, text_mode=text_mode,
-                         container=_cqm_angaben(tool), quelle_pfad=tool.path)
+                         container={} if ohne_abbild else _cqm_angaben(tool),
+                         quelle_pfad="" if ohne_abbild else tool.path,
+                         provenance=provenance, beilagen=beilagen)
 
         # 4) Alles einpacken.
         ziel.parent.mkdir(parents=True, exist_ok=True)
         with zipfile.ZipFile(ziel, "w", zipfile.ZIP_DEFLATED) as z:
-            z.write(abbild, abbild.name)
+            if not ohne_abbild:
+                z.write(abbild, abbild.name)
+            for pfad, inhalt in sorted((beilagen or {}).items()):
+                z.writestr(pfad, inhalt)
             z.writestr(f"{stamm}.txt", text)
             z.writestr(INVENTAR_DATEI, inventar_yaml(daten))
             for p in sorted(dateien.rglob("*")):

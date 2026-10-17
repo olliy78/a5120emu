@@ -2920,6 +2920,11 @@ bool DiskVolume::extractAll(const std::string& dest_dir, const TransferOptions& 
             // Nutzerbereich-Praefix ("3:NAME") ist im Dateinamen unbrauchbar.
             std::string datei = e.qualifiedName();
             std::replace(datei.begin(), datei.end(), ':', '_');
+            // CP/M-Namen sind beliebige Bytes: "/Z/HOFFM" (OS/M-Diskette mit UNIX-Namen)
+            // wuerde als absoluter Pfad aus dem Zielordner ausbrechen, "GW/ZSID.DOC" in
+            // einen nicht vorhandenen Unterordner schreiben.  Unter UNIX ist '/' dagegen
+            // der Verzeichnistrenner des Dateisystems selbst.
+            if (!istUnix()) std::replace(datei.begin(), datei.end(), '/', '_');
             // Der Eintrag ist hier schon vollstaendig gelesen — durchreichen, sonst
             // holte `extract` das Verzeichnis JE DATEI erneut (bei UDOS heisst das:
             // jeden Kopfsektor der Seite, an einer physischen Diskette Spur um Spur).
@@ -2980,6 +2985,11 @@ bool DiskVolume::extractAll(const std::string& dest_dir, const TransferOptions& 
             if (a.name == e.name && !a.read_only && !a.system && !a.archived) continue;
             std::string datei = e.qualifiedName();
             std::replace(datei.begin(), datei.end(), ':', '_');
+            // CP/M-Namen sind beliebige Bytes: "/Z/HOFFM" (OS/M-Diskette mit UNIX-Namen)
+            // wuerde als absoluter Pfad aus dem Zielordner ausbrechen, "GW/ZSID.DOC" in
+            // einen nicht vorhandenen Unterordner schreiben.  Unter UNIX ist '/' dagegen
+            // der Verzeichnistrenner des Dateisystems selbst.
+            if (!istUnix()) std::replace(datei.begin(), datei.end(), '/', '_');
             eintraege.emplace_back(datei, a);
         }
         if (!eintraege.empty()

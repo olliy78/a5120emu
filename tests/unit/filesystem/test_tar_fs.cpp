@@ -275,6 +275,35 @@ TEST(TarFs, AbgeschnittenIstTeilstueckKeinFehler) {
     fs::remove(p3);
 }
 
+/// @test Hartlink, dessen Ziel auf einer anderen Diskette liegt: leere, als unvollstaendig
+/// markierte Datei + Befund `tar.linkziel` — der Auszug bricht NICHT ab (er verlore sonst
+/// alle uebrigen Dateien der Diskette).
+TEST(TarFs, HartlinkOhneZielBrichtDenAuszugNichtAb) {
+    std::vector<uint8_t> s;
+    haenge(s, {"a.txt", "eins\n"});
+    Datei l; l.name = "bin/zweitname"; l.typ = '1'; l.link = "bin/fehlt"; l.mode = 0755;
+    haenge(s, l);
+    ende(s);
+    const std::string p = imgMit("k1520_test_tar_linkziel.img", aufDisk(s));
+    auto v = oeffne(p);
+    ASSERT_TRUE(v);
+    const auto liste = v->list();
+    const FileEntry* e = finde(liste, "bin/zweitname");
+    ASSERT_TRUE(e);
+    EXPECT_TRUE(e->damaged);
+    EXPECT_EQ(e->size, 0u);
+    EXPECT_TRUE(hatBefund(v->checkReport(), "tar.linkziel"));
+    EXPECT_EQ(v->checkReport().zaehlerAb(FsSeverity::Fehler), 0);
+    const std::string z = k1520test::tempPath("k1520_test_tar_linkziel_aus");
+    fs::remove_all(z);
+    TransferOptions to;
+    ASSERT_TRUE(v->extractAll(z, to)) << v->lastError();
+    EXPECT_EQ(fs::file_size(fs::path(z) / "bin" / "zweitname"), 0u);
+    EXPECT_TRUE(fs::exists(fs::path(z) / "a.txt"));
+    fs::remove_all(z);
+    fs::remove(p);
+}
+
 /// @test Diskette 2..n beginnt mitten in einer Datei: als Fortsetzung erkannt.
 TEST(TarFs, FortsetzungWirdErkannt) {
     std::vector<uint8_t> s(1536);           // Anfangsstueck: 3 Bloecke Dateiinhalt (Text)

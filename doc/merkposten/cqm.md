@@ -46,3 +46,8 @@ Voller Befund an 142 Abbildern: `doc/design/33_cqm.md`.
    Aktion „tar-Satz öffnen…" (kein Kuerzel).  Archiv: Abbild bleibt `.hfe`; `.cqm`-Quelle als
    `source_container` (Metadaten + sha256 der Quelldatei).  Testhilfe `tests/python/cqm_bau.py`,
    Waechter `py_cqm_emulator_gui`, `py_cqm_disktool_gui`.  Kein Drag&Drop zum Oeffnen vorhanden.
+12. **Sammlung archivieren (2026-10-17).**  `tools/p8000/pofo_archive.py --quelle … --meta … --ziel …`
+   macht aus den pofo.de-Abbildern je ein DiskTool-Archiv (+ Satzarchive der tar-Mehrdisketten-
+   Saetze, Webseiten-Herkunft als `provenance:`; siehe `disktool.md`, „Archiv mit Herkunft").
+   Die `*.crdownload` der Sammlung sind **vollstaendige** CQM-Abbilder (Strom komplett, Pruefwert ok)
+   — nur umbenennen; das Skript berichtet es, archiviert sie nicht.
