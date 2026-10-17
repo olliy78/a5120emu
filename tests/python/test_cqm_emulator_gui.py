@@ -1,8 +1,8 @@
 """CopyQM-Abbilder (.cqm) im Laufwerkskasten des Emulators (PySide6, headless).
 
-Ein ``.cqm`` ist nur lesbar: Write-Protect gesetzt und nicht abwaehlbar, Hinweis im
-Kasten (kein Meldungsfenster), Kommentar als Tooltip, kein Formatdialog,
-„Speichern unter…" nur in .hfe/.dmk/.img.
+Ein ``.cqm`` ist schreibbar (Haken frei), Kommentar als Tooltip, kein Formatdialog,
+Hinweise je Programmprofil im Kasten (kein Meldungsfenster), „Speichern unter…"
+als .cqm nur, wenn das Medium es traegt (sonst klare Meldung).
 """
 
 import pytest
@@ -33,29 +33,63 @@ def cqm_datei(tmp_path):
     return str(p)
 
 
-def test_open_filter_knows_cqm(qapp):
+def test_cqm_is_a_target_of_new_and_save_as(qapp):
     from app.ui.drive_widget import DriveWidget
     assert "*.cqm" in DriveWidget.DISK_FILTER
-    # nie Ziel von Neu / Speichern unter
-    assert "cqm" not in DriveWidget.BLANK_FILTER
-    assert "cqm" not in DriveWidget.SAVE_FILTER_ALL
+    assert "*.cqm" in DriveWidget.BLANK_FILTER
+    assert "*.cqm" in DriveWidget.SAVE_FILTER_ALL
+    assert "*.cqm" in DriveWidget.SAVE_FILTER_CQM
     assert "cqm" not in DriveWidget.SAVE_FILTER_BITSTREAM
 
 
-@pytest.mark.skip(reason="CQM ist seit 2026-10-17 im Kern schreibbar; die Oberflaeche sperrt noch (naechster Auftrag)")
-def test_cqm_is_mounted_read_only_without_message_box(drives, cqm_datei):
+def test_cqm_is_mounted_writable_without_message_box(drives, cqm_datei, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+    monkeypatch.setattr(QMessageBox, "critical", staticmethod(
+        lambda *a, **k: pytest.fail("Meldungsfenster beim Einlegen")))
     assert drives.mount_path(0, cqm_datei)
     panel = drives._panels[0]
     emu = drives.emulator
     assert emu.disk_container(0) == "cqm"
+    assert not emu.is_disk_write_protected(0)
+    assert not panel._wp_check.isChecked() and panel._wp_check.isEnabled()
+    # Der Haken laesst sich setzen und wieder loesen
+    panel._wp_check.setChecked(True)
     assert emu.is_disk_write_protected(0)
-    # Haken gesetzt und nicht abwaehlbar
-    assert panel._wp_check.isChecked()
-    assert not panel._wp_check.isEnabled()
-    # Hinweis im Kasten, kein Meldungsfenster
-    assert panel._notice_label.isVisibleTo(drives) or panel._notice_label.text()
-    assert "CopyQM" in panel._notice_label.text()
-    assert "nicht zurückschreiben" in panel._notice_label.toolTip()
+    panel._wp_check.setChecked(False)
+    assert not emu.is_disk_write_protected(0)
+    # ohne Profil-Hinweise keine Hinweiszeile
+    assert not panel._notice_label.text()
+
+
+@pytest.mark.parametrize("maschine,udos,boot", [
+    ("a5120", True, True), ("prg710", True, False), ("k8915", False, False),
+    ("pc1715", False, False), ("p8000", False, False), ("mc80", False, False)])
+def test_cqm_hints_follow_the_program_profile(drives, cqm_datei, maschine, udos, boot):
+    from app.profil import profil
+    drives.cqm_hinweise = profil(maschine).cqm_hinweise
+    assert drives.mount_path(0, cqm_datei)
+    text = drives._panels[0]._notice_label.text()
+    assert ("mit UDOS nicht verwendbar" in text) == udos
+    assert ("für Bootdisketten ungeeignet" in text) == boot
+    assert "Sektorkontrollblöcke" in text or not udos
+
+
+def test_no_cqm_hints_for_other_containers(drives, tmp_path):
+    from app.profil import profil
+    drives.cqm_hinweise = profil("a5120").cqm_hinweise
+    ziel = str(tmp_path / "leer.hfe")
+    assert drives.emulator.create_disk(0, ziel, "", False)
+    drives._mounts[0] = (ziel, "", False)
+    drives._update_notice(0)
+    assert "CopyQM" not in drives._panels[0]._notice_label.text()
+
+
+def test_main_window_hands_the_profile_hints_to_the_drive_box():
+    from app.profil import profil
+    assert profil("a5120").cqm_hinweise and len(profil("a5120").cqm_hinweise) == 2
+    assert len(profil("prg710").cqm_hinweise) == 1
+    for m in ("k8915", "pc1715", "p8000", "mc80"):
+        assert profil(m).cqm_hinweise == ()
 
 
 def test_wp_can_be_cleared_in_the_core(drives, cqm_datei):
@@ -83,7 +117,7 @@ def test_container_info_via_the_emulator_api(drives, cqm_datei):
     assert e.disk_container_info(1, "comment") == ""
 
 
-def test_unmount_restores_the_write_protect_box(drives, cqm_datei):
+def test_unmount_clears_the_container_tooltip(drives, cqm_datei):
     assert drives.mount_path(0, cqm_datei)
     panel = drives._panels[0]
     panel._toggle_btn.click()                 # Unmount
@@ -108,28 +142,63 @@ def test_no_format_dialog_for_cqm(drives, cqm_datei, monkeypatch):
     assert drives.emulator.disk_container(0) == "cqm"
 
 
-def test_save_as_converts_and_cqm_target_is_refused(drives, cqm_datei, tmp_path,
-                                                    monkeypatch):
+def test_save_as_cqm_roundtrip_and_refusals(drives, cqm_datei, tmp_path, monkeypatch):
     from PySide6.QtWidgets import QFileDialog, QMessageBox
-    assert drives.mount_path(0, cqm_datei)
-    panel = drives._panels[0]
-
-    # .cqm als Ziel: abgelehnt (mit Meldung, der Nutzer hat es bewusst gewaehlt)
     meldungen = []
     monkeypatch.setattr(QMessageBox, "critical",
-                        staticmethod(lambda *a, **k: meldungen.append(a[1:])))
-    ziel_cqm = str(tmp_path / "x.cqm")
-    monkeypatch.setattr(QFileDialog, "getSaveFileName",
-                        staticmethod(lambda *a, **k: (ziel_cqm, "")))
-    panel._saveas_btn.click()
-    assert meldungen and not (tmp_path / "x.cqm").exists()
-    assert drives.emulator.disk_container(0) == "cqm"
+                        staticmethod(lambda *a, **k: meldungen.append(a[2])))
 
-    # .hfe: konvertiert, danach beschreibbar
+    def ziel(pfad):
+        monkeypatch.setattr(QFileDialog, "getSaveFileName",
+                            staticmethod(lambda *a, **k: (pfad, "")))
+
+    # .cqm -> .cqm: geht (einheitliche MFM-Geometrie)
+    assert drives.mount_path(0, cqm_datei)
+    panel = drives._panels[0]
+    neu = tmp_path / "kopie.cqm"
+    ziel(str(neu))
+    panel._saveas_btn.click()
+    assert not meldungen and neu.exists()
+    assert drives.emulator.disk_container(0) == "cqm"
+    assert drives.emulator.disk_notice(0) == ""
+
+    # .cqm -> .hfe: konvertiert, danach ohne Container-Tooltip
     ziel_hfe = str(tmp_path / "kopie.hfe")
-    monkeypatch.setattr(QFileDialog, "getSaveFileName",
-                        staticmethod(lambda *a, **k: (ziel_hfe, "")))
+    ziel(ziel_hfe)
     panel._saveas_btn.click()
     assert drives.emulator.disk_container(0) == "hfe"
-    assert panel._wp_check.isEnabled()
     assert panel._path_display.toolTip() == ""
+
+    # Leerdiskette (unformatiert) -> .cqm: klare Meldung VOR dem Kern, Bindung bleibt
+    leer = str(tmp_path / "leer.hfe")
+    assert drives.emulator.create_disk(1, leer, "", False)
+    drives.mount_path(1, leer)
+    ziel(str(tmp_path / "leer.cqm"))
+    drives._panels[1]._saveas_btn.click()
+    assert meldungen and "CopyQM" in meldungen[-1] and "unformatiert" in meldungen[-1]
+    assert not (tmp_path / "leer.cqm").exists()
+    assert drives.emulator.disk_container(1) == "hfe"
+
+
+def test_mixed_geometry_boot_disk_is_refused_with_the_reason(drives, tmp_path, monkeypatch):
+    """CP/A-Bootdiskette (128-B-Systemspuren + 512-B-Daten): als .cqm nicht darstellbar,
+    die Meldung nennt ausdruecklich die gemischten Formate, die Datei entsteht nicht."""
+    import shutil
+    from pathlib import Path
+    from PySide6.QtWidgets import QFileDialog, QMessageBox
+    quelle = Path(__file__).resolve().parents[2] / "disks/a5120_cpa/a5120_cpa_k5601_system.hfe"
+    if not quelle.exists():
+        pytest.skip("Bootdiskette nicht vorhanden")
+    kopie = tmp_path / "boot.hfe"
+    shutil.copy(quelle, kopie)
+    assert drives.mount_path(0, str(kopie))
+    meldungen = []
+    monkeypatch.setattr(QMessageBox, "critical",
+                        staticmethod(lambda *a, **k: meldungen.append(a[2])))
+    ziel = str(tmp_path / "boot.cqm")
+    monkeypatch.setattr(QFileDialog, "getSaveFileName",
+                        staticmethod(lambda *a, **k: (ziel, "")))
+    drives._panels[0]._saveas_btn.click()
+    assert meldungen and "gemischten Formate" in meldungen[-1], meldungen
+    assert not (tmp_path / "boot.cqm").exists()
+    assert drives.emulator.disk_container(0) == "hfe"

@@ -6,11 +6,11 @@ Dieses Werkzeug holt Dateien von Disketten der K1520-Rechner (A5120, A5130, PC 1
 auf den heutigen Rechner und schreibt sie zurück. Es liest und schreibt die
 Dateisysteme von **CP/A**, **SCPX**, **UDOS/ZDOS**, **UDOS1715/NDOS** und
 **SCP1700** (CP/M-86 des A7100) in den
-Abbildformaten `.hfe`, `.dmk` und `.img`; CopyQM-Abbilder (`.cqm`) liest es nur.
+Abbildformaten `.hfe`, `.dmk`, `.img` und `.cqm` (CopyQM; soweit das Medium darstellbar ist).
 Dazu kommen die UNIX-Disketten des P8000: **WEGA** (mit Modus, Besitzer und Zeit je
 Datei) und **tar-Disketten** ohne Dateisystem, beide ohne UDOS-Angaben. Alles
 Wesentliche zu den neueren Funktionen steht in den Abschnitten *tar-Disketten*,
-*CopyQM-Abbilder*, *Was eine Datei außer ihren Bytes hat* und *Archivieren*
+*CopyQM-Abbilder*, *Containerformate im Vergleich*, *Was eine Datei außer ihren Bytes hat* und *Archivieren*
 (einschließlich *Archive auf der Kommandozeile*).
 
 Es gibt dasselbe auch als Kommandozeilenwerkzeug (`k1520disktool`); beide benutzen
@@ -167,19 +167,62 @@ nur lesbar. Das Dateisystem heißt in der Anzeige „tar-Archiv (UNIX)“; die B
 
 ## CopyQM-Abbilder
 
-Viele Abbilder alter Rechner liegen als `.cqm` (Programm CopyQM). Das Werkzeug **liest** sie
-wie jedes andere Abbild — Öffnen, Dateien holen, Prüfen, Archivieren, Diskeditor —, aber es
-**schreibt nie** in eine `.cqm`: die Statuszeile zeigt „schreibgeschützt (CopyQM)“, der
-Schreibschutz lässt sich nicht aufheben, und *Speichern*, *Löschen*, *Auf die Diskette
-schreiben*, *Alles einfügen* sowie das Reparieren und Ändern von Dateiangaben sind gesperrt
-(der Tooltip der Schaltfläche nennt den Grund). *Speichern unter…* wandelt in `.hfe`, `.dmk`
-oder `.img` um; ein `.cqm` ist nie ein Ziel, auch nicht bei *Neue Diskette*.
+Viele Abbilder alter Rechner liegen als `.cqm` (Programm CopyQM). Das Werkzeug **liest und
+schreibt** sie wie ein `.img`: Öffnen, Dateien holen, Speichern, Löschen, *Alles einfügen*,
+Reparieren, Dateiangaben ändern und der Schreibschutz-Schalter arbeiten wie bei jedem
+anderen Abbild. *Speichern unter…* und *Neue Diskette* bieten `.cqm` als Ziel an.
+Nur **tar-Disketten** bleiben gesperrt (auch in einer `.cqm`; der Tooltip nennt den Grund).
 
-Bezeichnung, Etikett, Interleave, Prüfwert und der **Kommentar** des Abbilds stehen unter
-*Diskettenangaben…*; der Kommentar außerdem als Tooltip am Dateinamen. Beim Archivieren
-liegt das Abbild als `.hfe` im Archiv (wie bei jeder Quelle); das Inhaltsverzeichnis nennt
-die `.cqm` als Quelle samt Kommentar, das maschinenlesbare Verzeichnis führt unter
-`source_container` die Angaben und die Prüfsumme der `.cqm`-Datei.
+Bezeichnung, Etikett, Interleave/Skew, Prüfwert und der **Kommentar** des Abbilds stehen unter
+*Diskettenangaben…*; der Kommentar außerdem als Tooltip am Dateinamen. Beim Zurückschreiben
+und bei *Speichern unter…* nach `.cqm` bleiben sie erhalten, solange die Geometrie gleich
+bleibt (Kommentar und Etikett auch sonst); der Umweg über `.hfe` und zurück erzeugt einen
+neuen Standardkopf („Image file created by k1520emu“). Datei → Medium → Datei ist
+inhaltsgleich, aber nicht byteidentisch (anderer Packschnitt).
+
+**Was abgelehnt wird.** Ein Medium, das CopyQM nicht darstellen kann, wird vor dem Schreiben
+abgewiesen; die Datei bleibt unverändert, die Meldung nennt den Grund:
+
+* *„CopyQM unterstützt keine gemischten Formate: die Spuren haben unterschiedliche
+  Sektorgrößen oder Sektorzahlen“* — z. B. CP/A-Bootdisketten (128-Byte-Systemspuren),
+* *„CopyQM kann die Sektorkontrollblöcke von UDOS nicht speichern“* — UDOS/ZDOS (die
+  Verkettung steht hinter der Daten-CRC),
+* *„CopyQM kennt nur MFM mit voller Datenrate“* — FM-Spuren,
+* *„CopyQM kann unformatierte Disketten/Spuren nicht speichern“*.
+
+Dasselbe gilt in der Kommandozeile (`save-as`, `create`, `export`). Beim Archivieren liegt das
+Abbild als `.hfe` im Archiv (wie bei jeder Quelle); das Inhaltsverzeichnis nennt die `.cqm`
+als Quelle samt Kommentar, das maschinenlesbare Verzeichnis führt unter `source_container` die
+Angaben und die Prüfsumme der `.cqm`-Datei. Beispiel Konvertieren (Aufnahme → CopyQM, wo es
+passt): `k1520disktool save-as scheibe.hfe scheibe.cqm`.
+
+## Containerformate im Vergleich
+
+Dasselbe Dateisystem kann in vier Behältern liegen. Sie unterscheiden sich darin, **wie nah
+an der Scheibe** sie sind:
+
+| | `.img` | `.cqm` | `.dmk` | `.hfe` |
+|---|---|---|---|---|
+| speichert | nur Sektorbytes | Sektorbytes, RLE-gepackt | Spurbytes + Tabelle der Adressmarken | Bitzellen der ganzen Spur |
+| Geometrie | nicht in der Datei: kommt aus dem Formatkatalog (`formats.yaml`) | im Kopf, **eine** (Sektorgröße, -zahl, Seiten, Zylinder) | je Spur | je Spur |
+| selbstbeschreibend | nein | ja | ja | ja |
+| gemischte Geometrie (128-B-Systemspuren) | ja, über das Katalogformat | **nein** | ja | ja |
+| Lücken, Sync, Daten hinter der CRC (UDOS) | nein | nein | ja | ja |
+| FM / MFM | je Katalogformat | nur MFM | beides | beides |
+| unformatierte Spuren | nein | nein (Enden nur als „nicht gespeichert“) | ja | ja |
+| Kommentar / Etikett | nein | ja | nein | nein |
+| Komprimierung | nein | ja | nein | nein |
+
+Daraus folgt:
+
+* **Bootdisketten** (CP/A: 128-Byte-Systemspuren, sonst 512 B): gemischte Geometrie —
+  als `.cqm` nicht darstellbar. UDOS auf A5120 und PRG 710: Sektorkontrollblöcke und
+  Gap-Verkettung hinter der CRC — weder als `.cqm` noch als `.img`. FM-Disketten und
+  unformatierte Leerdisketten: nicht als `.cqm` (`.img` kennt „unformatiert“ ebenfalls nicht).
+  UDOS1715/NDOS (Zeigersektoren) geht in jedem Behälter.
+* **Empfehlung:** Bootdisketten und UDOS als **`.hfe`** (verlustfrei, auch physisch
+  schreibbar); Austausch und Archiv *einheitlicher* Disketten als **`.cqm`** (klein, trägt
+  Kommentar) oder **`.img`**; `.dmk` für Werkzeuge, die es erwarten.
 
 ## UDOS1715 — dasselbe UDOS, anderes Dateisystem
 

@@ -356,9 +356,13 @@ std::string spurName(unsigned c, unsigned h) {
 bool sektorStrom(const DiskMedium& in, Strom& st, std::string& err) {
     const std::string grund = in.rawIncompatibleReason();
     if (!grund.empty()) {
-        err = "Diskette laesst sich nicht als .cqm speichern (" + grund
-              + ") — Gap-Anhaenge/unformatierte Spuren gehen dabei verloren. "
-                "Bitte .hfe oder .dmk waehlen.";
+        if (grund == "unformatiert" || grund == "kein Medium")
+            err = "CopyQM kann unformatierte Disketten nicht speichern (das Format kennt "
+                  "keine leere Diskette). Bitte .hfe oder .dmk verwenden.";
+        else
+            err = "CopyQM kann die Sektorkontrollbloecke von UDOS nicht speichern: " + grund
+                  + " traegt Nutzdaten hinter der Daten-CRC oder eine unformatierte Luecke, "
+                    "die dabei verloren gingen. Bitte .hfe oder .dmk verwenden.";
         return false;
     }
     const unsigned ncyls = in.numCylinders(), nheads = in.numHeads();
@@ -372,7 +376,7 @@ bool sektorStrom(const DiskMedium& in, Strom& st, std::string& err) {
                 last = static_cast<int>(c);
                 if (h == 1) seite1 = true;
             }
-    if (last < 0) { err = "CopyQM: Diskette ist unformatiert"; return false; }
+    if (last < 0) { err = "CopyQM kann unformatierte Disketten nicht speichern. Bitte .hfe oder .dmk verwenden."; return false; }
     const unsigned heads = (nheads >= 2 && seite1) ? 2 : 1;
     st.used  = static_cast<uint8_t>(last + 1);
     st.total = static_cast<uint8_t>(ncyls);
@@ -383,13 +387,14 @@ bool sektorStrom(const DiskMedium& in, Strom& st, std::string& err) {
         for (unsigned h = 0; h < heads; ++h) {
             const TrackImage& t = in.peek(static_cast<uint8_t>(c), static_cast<uint8_t>(h));
             if (t.empty()) {
-                err = "CopyQM: Spur " + spurName(c, h) + " ist unformatiert, davor/dahinter "
-                      "liegen aber beschriebene Spuren (ungleichmaessige Geometrie)";
+                err = "CopyQM kann unformatierte Spuren nicht speichern: Spur " + spurName(c, h)
+                      + " ist unformatiert, davor oder dahinter liegen aber beschriebene "
+                        "Spuren. Bitte .hfe oder .dmk verwenden.";
                 return false;
             }
             if (t.encoding != Encoding::MFM || t.cell_factor != 1) {
-                err = "CopyQM kennt nur MFM mit voller Datenrate (Spur " + spurName(c, h)
-                      + " ist FM oder halbe Rate)";
+                err = "CopyQM kennt nur MFM mit voller Datenrate: Spur " + spurName(c, h)
+                      + " ist FM oder hat halbe Datenrate. Bitte .hfe oder .dmk verwenden.";
                 return false;
             }
             auto secs = TrackCodec::parseTrack(t);
@@ -399,11 +404,14 @@ bool sektorStrom(const DiskMedium& in, Strom& st, std::string& err) {
             const uint16_t sz = secs.front().size;
             for (size_t i = 0; i < secs.size(); ++i) {
                 if (secs[i].size != sz || secs[i].data.size() != sz) {
-                    err = "CopyQM: Spur " + spurName(c, h) + " mischt Sektorgroessen";
+                    err = "CopyQM unterstuetzt keine gemischten Formate: Spur " + spurName(c, h)
+                          + " mischt Sektorgroessen. Bitte .hfe oder .dmk verwenden.";
                     return false;
                 }
                 if (i && secs[i].id != secs[i - 1].id + 1) {
-                    err = "CopyQM: Sektor-IDs der Spur " + spurName(c, h) + " sind nicht lueckenlos";
+                    err = "CopyQM unterstuetzt keine gemischten Formate: die Sektor-IDs der Spur "
+                          + spurName(c, h) + " sind nicht lueckenlos. Bitte .hfe oder .dmk "
+                            "verwenden.";
                     return false;
                 }
             }
@@ -422,8 +430,10 @@ bool sektorStrom(const DiskMedium& in, Strom& st, std::string& err) {
                     return false;
                 }
             } else if (sz != st.size || secs.size() != st.spt || secs.front().id != st.base) {
-                err = "CopyQM: Spur " + spurName(c, h) + " weicht von der Geometrie der ersten "
-                      "Spur ab (Sektorgroesse/-zahl/-IDs muessen einheitlich sein)";
+                err = "CopyQM unterstuetzt keine gemischten Formate: die Spuren haben "
+                      "unterschiedliche Sektorgroessen oder Sektorzahlen (Spur "
+                      + spurName(c, h) + " weicht von der Geometrie der ersten Spur ab). Bitte .hfe oder "
+                        ".dmk verwenden.";
                 return false;
             }
             for (const LogicalSector& s : secs)

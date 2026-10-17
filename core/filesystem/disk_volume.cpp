@@ -3347,9 +3347,13 @@ std::unique_ptr<DiskVolume> DiskVolume::create(const std::string& path,
 
     // Vollstaendig formatierte Leerdiskette (echte Adressmarken und CRCs) …
     {
+        std::string grund;
         auto leer = DiskImage::create(path, *fmt, /*write_protect=*/false,
-                                      fmt->predominantEncoding());
-        if (!leer) { err = "Abbild nicht anlegbar: " + path; return nullptr; }
+                                      fmt->predominantEncoding(), &grund);
+        if (!leer) {
+            err = "Abbild nicht anlegbar: " + path + (grund.empty() ? "" : " (" + grund + ")");
+            return nullptr;
+        }
         if (!leer->flush()) { err = leer->lastError(); return nullptr; }
     }
 

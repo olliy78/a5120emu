@@ -28,7 +28,7 @@ Zum Dateiaustausch mit den Disketten gibt es das Schwesterprogramm
    nach dem Boot-ROM stehen.
 2. **Diskette einlegen** — *Datei ▸ Diskette einlegen ▸ Laufwerk A:* oder der
    Knopf *Mount* im Kasten „Laufwerke". Angenommen werden `.hfe`, `.dmk`,
-   `.img` und `.cqm` (CopyQM, nur lesbar).
+   `.img` und `.cqm` (CopyQM).
 3. **Kaltstart.** Eine frisch eingelegte Diskette bootet nicht von selbst — der
    Rechner sieht sie erst beim nächsten Start: *Maschine ▸ Rückstellen*
    (Strg+Umschalt+R).
@@ -189,17 +189,30 @@ geraten, und ein geratenes Abbild sieht heil aus und ist es nicht.
 
 ## CopyQM-Abbilder
 
-Ein `.cqm` (Abbild des Programms CopyQM) lässt sich einlegen wie jedes andere
-Abbild, ist aber **nur lesbar**: der Haken *Write-Protect* ist gesetzt und lässt
-sich nicht abwählen, die Statuszeile zeigt `R/O`, und im Laufwerkskasten steht
-der Hinweis „CopyQM-Abbild: nur lesbar". Die Geometrie steht in der Datei, ein
-Formatdialog erscheint deshalb nicht. Bezeichnung, Etikett, Interleave, Prüfwert
-und der **Kommentar** des Abbilds stehen als Tooltip am Abbildnamen.
+Ein `.cqm` (Abbild des Programms CopyQM) lässt sich einlegen wie jedes andere Abbild und
+ist **les- und schreibbar**: der Haken *Write-Protect* ist frei setzbar, die Statuszeile
+zeigt `R/W` bzw. `R/O` nach dem tatsächlichen Schutz. Die Geometrie steht in der Datei,
+ein Formatdialog erscheint deshalb nicht. Bezeichnung, Etikett, Interleave, Prüfwert und
+der **Kommentar** des Abbilds stehen als Tooltip am Abbildnamen und bleiben beim
+Zurückschreiben erhalten. Je nach Rechner zeigt der Laufwerkskasten Hinweise zu den Grenzen
+des Formats (UDOS, Bootdisketten) — kein Meldungsfenster.
 
-Soll das Gastsystem auf die Diskette schreiben, wandelt *Speichern unter…* sie in
-ein `.hfe`, `.dmk` oder `.img` um; ab dann arbeitet der Kasten mit der Kopie. Ein
-`.cqm` ist als Ziel nie wählbar — weder bei *Speichern unter…* noch bei
-*Leere Diskette*.
+**Grenzen.** CopyQM speichert Sektorbytes und **eine einzige** Geometrie: eine
+Sektorgröße, eine Sektorzahl, MFM mit voller Datenrate, lückenlose Sektornummern. Nicht
+darstellbar und deshalb als `.cqm` abgelehnt (die Datei bleibt dann unverändert; im
+Laufwerkskasten steht „Abbild nicht speicherbar: …“, das Gastsystem läuft mit dem
+Speicherabbild weiter) sind:
+
+* **gemischte Formate**, z. B. CP/A-Bootdisketten mit 128-Byte-Systemspuren,
+* **UDOS** auf A5120 und PRG 710: die Dateiverkettung und der Sektorkontrollblock stehen
+  hinter der Datenprüfsumme (UDOS1715/NDOS legt die Verkettung in eigene Sektoren und geht),
+* **FM**-Spuren und halbe Datenrate,
+* **unformatierte** Disketten und Spuren.
+
+*Speichern unter…* und *Leere Diskette* bieten `.cqm` an und nennen bei einem
+ungeeigneten Medium den Grund im Dialog. Wofür welches Format: Bootdisketten und UDOS als
+`.hfe`; Austausch und Archiv einheitlicher Disketten als `.cqm` oder `.img`. Der
+Vergleich aller Formate steht im Handbuch des DiskTool („Containerformate im Vergleich“).
 
 ## Laufwerke bestücken
 

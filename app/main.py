@@ -137,7 +137,7 @@ HILFE = f"""{_P} — {_KOPF[PROFIL.maschine]}
   {_P} --paths          aufgeloeste Pfade zeigen (Bibliothek, Katalog, Disketten)
   {_P} --help           diese Hilfe
 
-Angenommen werden .img, .hfe, .dmk und .cqm (CopyQM, nur lesbar).  Die genannten Disketten liegen beim
+Angenommen werden .img, .hfe, .dmk und .cqm (CopyQM).  Die genannten Disketten liegen beim
 Kaltstart bereits im Laufwerk — die Maschine bootet also von der ersten.  Sie
 ersetzen die zuletzt gemerkte Belegung nur fuer diesen Lauf; gespeichert wird
 nichts.

@@ -891,7 +891,8 @@ Zwei Dinge, die dabei auffallen können:
 Oeffnen ist die Diskette (wie immer) geschuetzt, `put`/`rm` heben es auf.  Geometrie kommt aus
 dem Abbild, nicht aus einem Format; geschrieben wird nur, was sich als gleichmaessiger
 MFM-Sektorstrom darstellen laesst (`rawCompatible`, einheitliche Sektorzahl/-groesse, keine
-unformatierte Luecke).  Sonst bricht der Befehl mit Begruendung ab und die Datei bleibt
+unformatierte Luecke).  Sonst bricht der Befehl mit ausdruecklicher Begruendung ab ("CopyQM unterstuetzt keine gemischten
+Formate", "… Sektorkontrollbloecke von UDOS …", "… nur MFM …", "… unformatierte …") und die Datei bleibt
 unveraendert.  Kommentar, Bezeichnung, Etikett, Interleave/Skew eines geladenen Abbilds
 bleiben erhalten (auch bei `save-as x.cqm y.cqm`); ueber `.hfe` und zurueck gehen sie
 verloren (neuer Standardkopf).  Nicht moeglich: UDOS (Gap-Verkettung), CP/A-Disketten mit

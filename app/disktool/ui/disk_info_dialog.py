@@ -68,7 +68,7 @@ def container_zeilen(tool) -> list:
     info = tool.container_info()
     if info.get("type") != "cqm":
         return []
-    zeilen = ["Container:        CopyQM (.cqm), nur lesbar"]
+    zeilen = ["Container:        CopyQM (.cqm)"]
     for schluessel, name in _CQM_FELDER:
         if info.get(schluessel):
             zeilen.append(f"{name + ':':<18}{info[schluessel]}")

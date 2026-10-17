@@ -1,6 +1,7 @@
 """CopyQM (.cqm) und tar-Disketten im k1520DiskTool (PySide6, headless).
 
-Geprueft wird die Verdrahtung: Filter, Schreibsperre samt Begruendung, Statuszeile,
+Geprueft wird die Verdrahtung: Filter, Schreiben/Speichern (.cqm wie .img), Ablehnungs-
+meldungen, Schreibsperre der tar-Disketten samt Begruendung, Statuszeile,
 Angaben-Dialog (Kommentar & Co.), tar-Satz (Reihenfolge, Oeffnen), Archiv.
 """
 
@@ -70,36 +71,129 @@ def cqm_leer(tmp_path):
     return p
 
 
-def test_open_filters_know_cqm_and_targets_do_not(window):
+def test_open_filters_know_cqm_and_targets_do_too(window):
     assert "*.cqm" in window.OEFFNEN_FILTER
     import inspect
     from app.disktool.ui import main_window
-    # Die Dateifilter der Ziel-Dialoge nennen *.cqm nie (die Ablehnung eines getippten
-    # Namens steht in der Fehlermeldung, nicht im Filter).
+    # .cqm ist seit dem Schreiben im Kern auch Ziel von Neu und Speichern unter
     for dialog in (main_window.MainWindow._neu_dialog,
                    main_window.MainWindow._speichern_unter_dialog):
-        assert "*.cqm" not in inspect.getsource(dialog)
+        assert "*.cqm" in inspect.getsource(dialog)
 
 
-@pytest.mark.skip(reason="CQM ist seit 2026-10-17 im Kern schreibbar; die Oberflaeche sperrt noch (naechster Auftrag)")
-def test_cqm_is_opened_locked_with_reason_and_status(window, cqm_leer):
+@pytest.fixture
+def cqm_cpm(tmp_path):
+    """Eine echte, beschreibbare .cqm mit CP/M-Dateisystem (im Kern angelegt)."""
+    from app.core_binding.k1520disk import DiskTool
+    p = tmp_path / "arbeit.cqm"
+    DiskTool.create(p, "cpa800", "TEST").close()
+    return p
+
+
+def test_cqm_is_not_locked_and_has_no_forced_read_only(window, cqm_leer):
     assert window.open_image(str(cqm_leer))
     t = window.tool
-    assert t.ist_cqm and t.read_only and t.read_only_forced
-    assert "CopyQM" in window.st_schutz.text()
-    assert "schreibgeschützt" in window.st_schutz.text()
-    # Schreibbefehle gesperrt, Tooltip nennt den Grund; Lesebefehle frei
-    for a in (window.act_speichern, window.act_loeschen, window.act_schreiben,
-              window.act_alles_rein, window.act_schreibschutz):
-        assert not a.isEnabled(), a.text()
-    assert "Gesperrt" in window.act_speichern.toolTip()
-    assert ".cqm" in window.act_speichern.toolTip()
-    assert window.act_speichern_unter.isEnabled()
-    assert window.act_archivieren.isEnabled()
-    assert window.act_diskeditor.isEnabled()
-    # Schutz laesst sich auch von aussen nicht aufheben
+    assert t.ist_cqm and not t.read_only_forced
+    assert "CopyQM" not in window.st_schutz.text()
+    from app.disktool.ui.schreibsperre import sperrgrund
+    assert sperrgrund(t) == ""
+
+
+def test_cqm_with_filesystem_can_be_changed_saved_and_reloaded(window, cqm_cpm, tmp_path):
+    assert window.open_image(str(cqm_cpm))
     window.set_read_only(False)
-    assert window.tool.read_only
+    assert window.act_schreibschutz.isEnabled()
+    assert window.act_speichern.isEnabled()
+    assert "Gesperrt" not in window.act_speichern.toolTip()
+    quelle = tmp_path / "HALLO.TXT"
+    quelle.write_bytes(b"Hallo CopyQM\r\n" * 50)
+    window.tool.insert(quelle, "HALLO.TXT")
+    assert window.save()
+    window._close_tool()
+    assert window.open_image(str(cqm_cpm))
+    assert window.tool.ist_cqm
+    assert [e.name for e in window.tool.list()] == ["HALLO.TXT"]
+    ziel = tmp_path / "zurueck.txt"
+    window.tool.extract("HALLO.TXT", ziel)
+    assert ziel.read_bytes().startswith(b"Hallo CopyQM")
+    # Loeschen und Wiederherstellen des Schreibschutz-Schalters wie bei .img
+    window.set_read_only(False)
+    window.tool.erase("HALLO.TXT")
+    assert window.save()
+    assert window.tool.list() == []
+
+
+def test_cqm_comment_survives_writing_back(window, tmp_path):
+    from app.core_binding.k1520disk import DiskTool
+    p = tmp_path / "k.cqm"
+    DiskTool.create(p, "cpa800", "K").close()
+    # Kommentar der Vorlage: Datei mit eigenem Kopf nachbauen ist Sache des Kerns
+    # (CqmWrite.KopffelderBleibenErhalten); hier zaehlt, dass der Standardkommentar bleibt.
+    assert window.open_image(str(p))
+    vorher = window.tool.container_info().get("comment")
+    window.set_read_only(False)
+    window.tool.insert(__file__, "T.PY")
+    assert window.save()
+    window._close_tool()
+    assert window.open_image(str(p))
+    assert window.tool.container_info().get("comment") == vorher
+
+
+def test_save_as_cqm_works_for_a_uniform_disk(window, cqm_cpm, tmp_path):
+    assert window.open_image(str(cqm_cpm))
+    ziel = tmp_path / "zweite.cqm"
+    assert window.save_as(ziel) and ziel.exists()
+    assert window.tool.ist_cqm
+
+
+def test_save_as_cqm_of_mixed_geometry_gives_the_reason(window, tmp_path, monkeypatch,
+                                                         fixture_disks):
+    """CP/A-Bootdiskette (cpa780: 128-B-Systemspuren): als .cqm nicht darstellbar -
+    verstaendliche Meldung, Datei unveraendert, die offene Diskette bleibt."""
+    import shutil
+    from PySide6.QtWidgets import QMessageBox
+    meldungen = []
+    monkeypatch.setattr(QMessageBox, "critical",
+                        staticmethod(lambda *a, **k: meldungen.append(a[2])))
+    quelle = tmp_path / "boot.img"
+    shutil.copy(fixture_disks / "cpa_cpa780_k5601_clock.img", quelle)
+    assert window.open_image(str(quelle))
+    assert not window.save_as(tmp_path / "boot.cqm")
+    assert meldungen and "gemischten Formate" in meldungen[-1], meldungen
+    assert not (tmp_path / "boot.cqm").exists()
+    assert window.tool.path == str(quelle)
+
+
+def test_udos_to_cqm_is_refused_before_the_core(window, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+    meldungen = []
+    monkeypatch.setattr(QMessageBox, "critical",
+                        staticmethod(lambda *a, **k: meldungen.append(a[2])))
+    from app.disktool.ui.main_window import MainWindow
+    grund = MainWindow._container_grund(tmp_path / "x.cqm", "udos_ds77")
+    assert "Sektorkontrollblöcke von UDOS" in grund
+    assert MainWindow._container_grund(tmp_path / "x.hfe", "udos_ds77") == ""
+    assert MainWindow._container_grund(tmp_path / "x.cqm", "udos1715") == ""
+    assert MainWindow._container_grund(tmp_path / "x.cqm", "cpa800") == ""
+
+
+def test_create_cqm_with_udos_or_mixed_format_gives_a_reason(window, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+    meldungen = []
+    monkeypatch.setattr(QMessageBox, "critical",
+                        staticmethod(lambda *a, **k: meldungen.append(a[2])))
+    assert not window.create_disk(tmp_path / "m.cqm", "cpa780")
+    assert meldungen and "gemischten Formate" in meldungen[-1], meldungen
+    assert not (tmp_path / "m.cqm").exists()
+    assert window.create_disk(tmp_path / "ok.cqm", "cpa800", "OK")
+    assert window.tool.ist_cqm and not window.tool.read_only
+
+
+def test_cqm_info_has_no_mount_hints(window, cqm_leer):
+    """Hinweise zu UDOS/Bootdisketten gehoeren in den Emulator, nicht ins DiskTool."""
+    assert window.open_image(str(cqm_leer))
+    assert "mit UDOS nicht verwendbar" not in window.protokoll.toPlainText()
+    assert "Bootdisketten ungeeignet" not in window.protokoll.toPlainText()
 
 
 def test_tar_disk_shows_friendly_name_and_is_locked(window, tmp_path):
@@ -148,17 +242,19 @@ def test_plain_img_is_not_locked(window, tmp_path, fixture_disks):
     assert not window.tool.read_only_forced
 
 
-def test_cqm_as_save_or_new_target_is_refused(window, cqm_tar, tmp_path, monkeypatch):
-    from PySide6.QtWidgets import QMessageBox
-    meldungen = []
-    monkeypatch.setattr(QMessageBox, "critical",
-                        staticmethod(lambda *a, **k: meldungen.append(a)))
-    window.open_image(str(cqm_tar))
-    assert not window.save_as(tmp_path / "x.cqm")
-    assert meldungen and not (tmp_path / "x.cqm").exists()
-    # Konvertieren nach .hfe geht
-    assert window.save_as(tmp_path / "x.hfe")
-    assert (tmp_path / "x.hfe").exists()
+def test_tar_disk_stays_locked_even_inside_a_cqm(window, cqm_tar):
+    assert window.open_image(str(cqm_tar))
+    t = window.tool
+    assert t.ist_tar and t.ist_cqm and t.read_only_forced
+    assert "tar-Archiv" in window.st_schutz.text()
+    assert "Archivstrom" in window.act_speichern.toolTip()
+    assert not window.act_schreibschutz.isEnabled()
+    # Konvertieren nach .hfe geht weiterhin
+    assert window.save_as(window_ziel(cqm_tar, "x.hfe"))
+
+
+def window_ziel(quelle, name):
+    return quelle.parent / name
 
 
 def test_tar_satz_order_proposal_sorts_numbers_naturally():

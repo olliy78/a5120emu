@@ -118,6 +118,9 @@ class Programmprofil:
     #: unter *Einstellungen ▸ Allgemein* (doc/design/22_raf512.md §7).  Alle drei
     #: Programme bieten sie an; ohne sie laeuft die Maschine stets ohne RAF.
     raf_wahl: bool = True
+    #: Hinweise, die der Laufwerkskasten beim Einlegen eines ``.cqm`` zeigt (Hinweiszeile,
+    #: kein Meldungsfenster): was CopyQM an DIESEM Rechner unbrauchbar macht.  Leer = keine.
+    cqm_hinweise: Tuple[str, ...] = ()
     #: Diskettenlaufwerke (K5122 o. ae.): ohne sie (MC80) fallen Kasten „Laufwerke“, die
     #: Diskettenmenues und die Laufwerksfelder der Statuszeile weg.
     laufwerke: bool = True
@@ -351,11 +354,16 @@ class Programmprofil:
         return dt.drive_types_for(self.maschine)
 
 
+#: Hinweise zu CopyQM (.cqm) beim Einlegen; je Profil in `cqm_hinweise` gewaehlt.
+CQM_HINWEIS_UDOS = ("CopyQM-Abbilder sind mit UDOS nicht verwendbar: das Format kann die Sektorkontrollblöcke nicht speichern.")
+CQM_HINWEIS_BOOT = ("CopyQM ist für Bootdisketten ungeeignet: diese enthalten ein gemischtes Format (128-Byte-Systemspuren), das CopyQM nicht darstellen kann.")
+
 A5120 = Programmprofil(
     maschine="a5120",
     programm="a5120emu",
     titel="A5120 Emulator",
     rechner="A5120",
+    cqm_hinweise=(CQM_HINWEIS_UDOS, CQM_HINWEIS_BOOT),
     beschreibung="Emulator des Bürocomputers robotron A5120 (K1520-Bus)",
     konfig_datei="a5120emu.yaml",
     vorgabe_datei="default_config_a5120.yaml",
@@ -428,6 +436,7 @@ PRG710 = Programmprofil(
     programm="prg710emu",
     titel="PRG710 Emulator",
     rechner="PRG 710",
+    cqm_hinweise=(CQM_HINWEIS_UDOS,),
     beschreibung="Emulator der Programmiergeräte robotron PRG 710 und PRG 710-1 (K1520-Bus)",
     konfig_datei="prg710emu.yaml",
     vorgabe_datei="default_config_prg710.yaml",

@@ -47,15 +47,22 @@ Voller Befund an 142 Abbildern: `doc/design/33_cqm.md`.
 10. **84 Abbilder sind rohe tar-Ströme** (kein Dateisystem), erkannt als `tar720`
    (`doc/merkposten/disktool.md`).  Offen: `.cqm` in den GUI-Dateidialogen, nicht
    gespeicherte Zylinder nur synthetisch geprueft.
-11. **Oberflaechen (2026-10-17; Stand VOR dem Schreiben — die Oberflaeche sperrt `.cqm` noch
-   selbst, Umbau ist der naechste Auftrag; `py_cqm_*` haben dafuer zwei uebersprungene Faelle).**
-   Emulator: der Kern erzwingt keinen Schutz mehr, `k1520_disk_container_info`
-   (Metadaten wie `k1520d_container_info`); Laufwerkskasten: Haken fest, Kommentar als Tooltip,
-   `.cqm` nie Ziel von Neu/Speichern unter.  DiskTool: `k1520d_read_only_forced`,
-   `k1520d_open_tar_satz`, `app/disktool/ui/schreibsperre.py` (Grund an EINER Stelle),
-   Aktion „tar-Satz öffnen…" (kein Kuerzel).  Archiv: Abbild bleibt `.hfe`; `.cqm`-Quelle als
-   `source_container` (Metadaten + sha256 der Quelldatei).  Testhilfe `tests/python/cqm_bau.py`,
-   Waechter `py_cqm_emulator_gui`, `py_cqm_disktool_gui`.  Kein Drag&Drop zum Oeffnen vorhanden.
+11. **Oberflaechen (Stand 2026-10-17, nach dem Schreiben).**  `.cqm` ist in beiden Oberflaechen
+   SCHREIBBAR; nur tar bleibt unaufhebbar gesperrt (`app/disktool/ui/schreibsperre.py`, Grund an
+   EINER Stelle).  Emulator: Haken frei, Statuszeile R/W|R/O nach tatsaechlichem Schutz,
+   Kommentar als Tooltip, `k1520_disk_container_info`; „Leere Diskette"/„Speichern unter" bieten
+   `.cqm` (Leerdisketten wie `.img`: Vorformatierung ueber den Formatdialog; unformatiert ->
+   Meldung VOR dem Kern); „Abbild nicht speicherbar: <Grund>" steht als Hinweiszeile im Kasten.
+   Beim Einlegen einer `.cqm` zeigt der Kasten profilabhaengige Hinweise
+   (`Programmprofil.cqm_hinweise` -> `DriveWidget.cqm_hinweise`; A5120: UDOS + Bootdisketten,
+   PRG 710: UDOS; K8915/PC1715/P8000/MC80 keine — **P8000 faehrt UDOS im 8-Bit-Teil, dort waere der
+   UDOS-Hinweis fachlich angebracht, nicht gesetzt**; PC1715 hat NDOS mit Zeigersektoren, geht).
+   DiskTool: `MainWindow._container_grund` weist UDOS->.img/.cqm vor dem Kern ab; die uebrigen
+   Gruende (gemischt, FM, unformatiert) liefert der Kern im Klartext (`CqmCodec::sektorStrom`,
+   `DiskImage::create(..., std::string* fehler)` reicht ihn bei `create` durch).  Keine solchen
+   Mount-Hinweise im DiskTool.  Archiv: Abbild bleibt `.hfe`; `.cqm`-Quelle als `source_container`.
+   Testhilfe `tests/python/cqm_bau.py`, Waechter `py_cqm_emulator_gui`, `py_cqm_disktool_gui`,
+   `CqmWrite.*` (Meldungstexte).  Kein Drag&Drop zum Oeffnen vorhanden.
 12. **Sammlung archivieren (2026-10-17).**  `tools/p8000/pofo_archive.py --quelle … --meta … --ziel …`
    macht aus den pofo.de-Abbildern je ein DiskTool-Archiv (+ Satzarchive der tar-Mehrdisketten-
    Saetze, Webseiten-Herkunft als `provenance:`; siehe `disktool.md`, „Archiv mit Herkunft").

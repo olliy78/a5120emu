@@ -633,7 +633,7 @@ class MainWindow(QMainWindow):
         # zu bekommen; nur waehrend des Schreibens ist das Laufwerk belegt.
         self.act_physisch.setEnabled(not laeuft)
 
-        # Unaufhebbar gesperrt (.cqm, tar): die Schreibbefehle bleiben zu, und der
+        # Unaufhebbar gesperrt (tar): die Schreibbefehle bleiben zu, und der
         # Tooltip sagt WARUM — sonst sucht man den Schreibschutz, den es nicht gibt.
         grund = sperrgrund(self.tool)
         if grund:
@@ -1831,9 +1831,9 @@ class MainWindow(QMainWindow):
         """
         if self.tool is None:
             return False
-        if str(path).lower().endswith(".cqm"):
-            self._fehler("Speichern unter", "CopyQM-Abbilder (.cqm) lassen sich nur lesen, "
-                         "nicht schreiben — bitte .hfe, .dmk oder .img wählen.")
+        grund = self._container_grund(path, self.tool.filesystem)
+        if grund:
+            self._fehler("Speichern unter", grund)
             return False
         try:
             self.tool.save_as(path)
@@ -1844,6 +1844,28 @@ class MainWindow(QMainWindow):
         self._zuletzt_merken(str(path))
         self.log(f"Gespeichert unter {path}")
         return True
+
+    @staticmethod
+    def _container_grund(path, filesystem: str) -> str:
+        """Warum das Dateisystem nicht in diesen Container passt ("" = darf versucht werden).
+
+        ``.img`` und ``.cqm`` tragen nur Sektordaten: UDOS/ZDOS verkettet hinter der
+        Daten-CRC und scheitert daran.  Ob die GEOMETRIE des Mediums reicht (einheitlich,
+        MFM — gemischte Systemspuren wie bei CP/A-Boot, FM, unformatierte Lücken tragen
+        sie nicht), entscheidet der Kern; er lehnt dann mit Grund ab und lässt die Datei
+        unverändert.
+        """
+        ext = str(path).lower().rsplit(".", 1)[-1]
+        if ext in ("img", "cqm") and any(f.name == filesystem and f.type == "udos"
+                                        for f in filesystems()):
+            if ext == "cqm":
+                return ("CopyQM kann die Sektorkontrollblöcke von UDOS nicht speichern: "
+                        "die Dateiverkettung steht dort hinter der Daten-CRC jedes Sektors "
+                        "und ginge verloren.\n\nBitte .hfe oder .dmk wählen.")
+            return (f"{filesystem} lässt sich nicht als Sektorabbild (.img) ablegen: die "
+                    "Dateiverkettung steht dort hinter der Daten-CRC jedes Sektors und "
+                    "ginge verloren.\n\nBitte .hfe oder .dmk wählen.")
+        return ""
 
     def archive(self, zip_path, bezeichnung: str = "", provenance: dict = None,
                 beilagen: dict = None) -> bool:
@@ -1952,7 +1974,7 @@ class MainWindow(QMainWindow):
         if pfad:
             self.open_image(pfad)
 
-    #: Dateifilter „Abbild oeffnen": .cqm (CopyQM) nur lesbar, nie Ziel von Neu/Speichern unter.
+    #: Dateifilter „Abbild oeffnen"; .cqm ist auch als Ziel erlaubt (wie .img, soweit darstellbar).
     OEFFNEN_FILTER = "Diskettenabbilder (*.hfe *.dmk *.img *.cqm);;Alle Dateien (*)"
 
     def _tar_satz_dialog(self) -> None:
@@ -1979,12 +2001,13 @@ class MainWindow(QMainWindow):
             return
         pfad, _ = QFileDialog.getSaveFileName(
             self, "Neue Diskette anlegen", self._disketten_ordner(),
-            "HFE-Abbild (*.hfe);;DMK-Abbild (*.dmk);;Sektorabbild (*.img)")
+            "HFE-Abbild (*.hfe);;DMK-Abbild (*.dmk);;Sektorabbild (*.img);;"
+            "CopyQM-Abbild (*.cqm)")
         if not pfad:
             return
-        if pfad.lower().endswith(".cqm"):
-            self._fehler("Neue Diskette", "CopyQM-Abbilder (.cqm) sind nur lesbar — eine "
-                         "neue Diskette lässt sich nur als .hfe, .dmk oder .img anlegen.")
+        grund = self._container_grund(pfad, fs)
+        if grund:
+            self._fehler("Neue Diskette", grund)
             return
 
         # Bootfaehig? — nur, wo es Systemspuren gibt (eine Datendiskette wie cpa800
@@ -2031,7 +2054,7 @@ class MainWindow(QMainWindow):
         filter_ = "HFE-Abbild (*.hfe);;DMK-Abbild (*.dmk)"
         if not any(f.name == self.tool.filesystem and f.type == "udos"
                    for f in filesystems()):
-            filter_ += ";;Sektorabbild (*.img)"
+            filter_ += ";;Sektorabbild (*.img);;CopyQM-Abbild (*.cqm)"
         pfad, _ = QFileDialog.getSaveFileName(
             self, "Speichern unter", self._neben_der_diskette(), filter_)
         if pfad:

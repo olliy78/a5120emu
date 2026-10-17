@@ -100,7 +100,8 @@ std::unique_ptr<DiskImage> DiskImage::createBlank(uint8_t num_cyls, uint8_t num_
 
 std::unique_ptr<DiskImage> DiskImage::create(const std::string& path,
                                              std::optional<DiskFormat> fmt,
-                                             bool write_protect, Encoding enc) {
+                                             bool write_protect, Encoding enc,
+                                             std::string* fehler) {
     if (!fmt.has_value()) return nullptr;
 
     const uint8_t num_cyls  = fmt->numCylinders();
@@ -134,8 +135,10 @@ std::unique_ptr<DiskImage> DiskImage::create(const std::string& path,
     if (img->container_ == ContainerType::Img) img->disk_format_ = fmt;
 
     std::string err;
-    if (!img->speichere(path, img->container_, img->diskFormat(), &img->cqm_info_, err))
+    if (!img->speichere(path, img->container_, img->diskFormat(), &img->cqm_info_, err)) {
+        if (fehler) *fehler = err;     // z. B. Grund, warum das Medium nicht als .cqm/.img darstellbar ist
         return nullptr;
+    }
 
     img->medium_.clearDirty();
     img->path_          = path;

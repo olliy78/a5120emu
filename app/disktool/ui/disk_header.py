@@ -106,7 +106,7 @@ class DiskHeader(QFrame):
         info = tool.container_info()
         tipp = ""
         if info.get("type") == "cqm":
-            tipp = "CopyQM-Abbild (nur lesbar)"
+            tipp = "CopyQM-Abbild"
             if info.get("description"):
                 tipp += f"\nBezeichnung: {info['description']}"
             if info.get("comment", "").strip():

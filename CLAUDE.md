@@ -599,8 +599,11 @@ Maschinenzeit zurück.  Kasten „Lochstreifen“ nur mit Karte, kein Kürzel, n
 ## CopyQM (.cqm) und tar-Disketten (Stand 2026-10-17, Zweig `cqm`)
 
 `.cqm` ist ein Container wie `.img` (`core/peripherals/floppy_drive/cqm_codec.*`, **lesen UND schreiben**,
-Grenze = `rawCompatible()` + einheitliche MFM-Geometrie, Kopffelder des Originals bleiben; seit
-2026-10-17 kein erzwungener Schreibschutz mehr — die Oberfläche `app/` sperrt `.cqm` noch selbst);
+Grenze = `rawCompatible()` + einheitliche MFM-Geometrie, Kopffelder des Originals bleiben; kein erzwungener
+Schreibschutz; die Oberflächen behandeln `.cqm` seit 2026-10-17 als schreibbar, nur tar bleibt gesperrt;
+Ablehnungsgründe stehen ausdrücklich im Kern („CopyQM unterstuetzt keine gemischten Formate…“); die
+Emulatoren zeigen beim Einlegen profilabhängige Hinweise `Programmprofil.cqm_hinweise` (A5120: UDOS+Boot,
+PRG 710: UDOS));
 P8000-Disketten ohne Dateisystem sind
 `tar720` (`core/filesystem/tar/`, Mehrdisketten-Strom über `tar-satz`/„tar-Satz öffnen…“).
 WEGA/tar tragen UNIX-Angaben statt UDOS-Kopfsektor (`FsType`, `istUnix()`).  Archive der

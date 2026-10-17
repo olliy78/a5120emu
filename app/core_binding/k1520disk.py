@@ -1989,7 +1989,7 @@ class DiskTool:
 
     @property
     def ist_cqm(self) -> bool:
-        """Quelle ist ein CopyQM-Abbild (``.cqm``, nur lesbar)."""
+        """Quelle ist ein CopyQM-Abbild (``.cqm``; lesbar und, soweit darstellbar, schreibbar)."""
         return self.container_info().get("type") == "cqm"
 
     def set_read_only(self, ro: bool) -> None:

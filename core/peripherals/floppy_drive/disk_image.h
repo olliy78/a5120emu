@@ -107,7 +107,8 @@ public:
     static std::unique_ptr<DiskImage> create(const std::string& path,
                                              std::optional<DiskFormat> fmt,
                                              bool write_protect,
-                                             Encoding enc = Encoding::MFM);
+                                             Encoding enc = Encoding::MFM,
+                                             std::string* fehler = nullptr);
 
     /**
      * @brief **Physische Diskette** in einem echten Laufwerk — spurweise nachgeladen.

@@ -762,6 +762,13 @@ TEST(CqmWrite, NichtDarstellbaresWirdAbgelehnt) {
         std::string err;
         EXPECT_FALSE(CqmCodec::save(p, f.m, err));
         EXPECT_NE(err.find(f.stichwort), std::string::npos) << err;
+        // Die Meldung nennt die Ursache ausdruecklich (Oberflaechen zeigen sie unveraendert).
+        if (f.name == "gemischt" || f.name == "spt" || f.name == "ids")
+            EXPECT_NE(err.find("unterstuetzt keine gemischten Formate"), std::string::npos) << err;
+        if (f.name == "crc")
+            EXPECT_NE(err.find("Sektorkontrollbloecke von UDOS"), std::string::npos) << err;
+        if (f.name == "fm")
+            EXPECT_NE(err.find("nur MFM"), std::string::npos) << err;
         EXPECT_EQ(lies(p), alt);
         EXPECT_FALSE(fs::exists(p + ".k1520tmp"));
     }

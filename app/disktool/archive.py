@@ -356,7 +356,7 @@ def inhaltsverzeichnis(tool: "DiskTool", quelle: str = "",
         z.append(f"Abbild        {datei}")
     cqm = {} if ohne_abbild else _cqm_angaben(tool)
     if cqm:
-        z.append("Container     CopyQM (.cqm, nur lesbar)"
+        z.append("Container     CopyQM (.cqm)"
                  + (" — kein Abbild im Archiv" if ohne_abbild
                     else " — im Archiv als .hfe abgelegt"))
         for schluessel, name in _CQM_ZEILEN:
